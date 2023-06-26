@@ -7,10 +7,13 @@ library(RStoolbox)
 climatic_variables <- raster::stack(list.files("T:/MODCLIM_R_DATA/ENVIREM/", ".tif", full.names = T))
 
 study_area <- read_sf(list.files("T:/MODCLIM_R_DATA/CUENCAS", "\\.shp$", full.names = T))
-polygon <- read_sf(list.files("T:/MODCLIM_R_DATA/shp", "\\.shp$", full.names = T))
+polygon <- read_sf(list.files("T:/MODCLIM_R_DATA/LIC/", "\\.shp$", full.names = T))
+polygon <- read_sf("T:/MODCLIM_R_DATA/LIC/LIC_SELECT.shp")
+
 
 study_area <- st_transform(study_area, crs(projection(climatic_variables)))
 polygon <- st_transform(polygon, crs(projection(climatic_variables)))
+
 
 # Crop raster to study area and polygon(centroid)
 beginCluster()
@@ -24,46 +27,77 @@ endCluster()
 
 # PCA results
 round(PCA$model$loadings[,1:5],3)
-summary(PCA$model)
+kk <- summary(PCA$model)
+kk <- kk$loadings
+kk <- as.data.frame(kk)
+PCA$model
 
 # Create raster with 3 first PCA factors
 raster_present <- PCA$map[[1:5]] # n of factors
-raster_polygon <- mask(crop(raster_present, polygon), polygon)
+
 
 # Raster to datafame
 
 data_present <- raster::as.data.frame(raster_present, xy = TRUE)
 data_present <- na.omit(data_present)
 
-data_polygon <- raster::as.data.frame(raster_polygon, xy = TRUE)
-data_polygon <- na.omit(data_polygon)
+#nrow(polygon)
+names <- polygon$lic_name
 
+mh_f <- data.frame(matrix(1,    # Create empty data frame
+                  nrow = nrow(data_present),
+                  ncol = length(names)))
 
-# Mahalanobis distance
-
-mh <- mahalanobis(data_present[,3:length(data_present)], 
-                  colMeans(data_polygon[,3:length(data_polygon)]), 
-                  cov(data_present[,3:length(data_present)]), 
-                  inverted = F)
+names(mh_f) <- names
+beginCluster()
+for (i in 1:nrow(polygon)){
+  pol <- polygon[i,]
+  raster_polygon <- mask(crop(raster_present, pol), pol)
+  data_polygon <- raster::as.data.frame(raster_polygon, xy = TRUE)
+  data_polygon <- na.omit(data_polygon)
+  
+  # Mahalanobis distance
+  
+  mh <- mahalanobis(data_present[,3:length(data_present)], 
+                    colMeans(data_polygon[,3:length(data_polygon)]), 
+                    cov(data_present[,3:length(data_present)]), 
+                    inverted = F)
+  
+  # Agregar información espacial al reusltado de mh
+  mh_f[,i] <- mh
+}
 
 # Agregar información espacial al reusltado de mh
-mh <- cbind(data_present, mh)
-
-mh_present <- mh[,c(1:2,8)]
+mh <- cbind(data_present[,1:2], mh_f)
 
 
 #Creamos raster
-mh_present <- rasterFromXYZ(mh_present)
+mh_present <- raster::brick()
 
+for(j in 3:length(mh)){
+  aa <- rasterFromXYZ(mh[, c(1:2,j)])
+  mh_present <- raster::stack(mh_present, aa)
+}
+
+endCluster()
 
 plot(mh_present)
 
-
 # Umbral para establecer el corte percentil 90
-mh_polygon <- mask(crop(mh_present, polygon), polygon)
-mh_polygon <- raster::as.data.frame(mh_polygon, xy = T)
-mh_polygon <- quantile(na.omit(mh_polygon[,3]), probs = c(.95))
-mh_polygon
+
+mh_present_bin_f <- raster::brick()
+for (i in 1:nlayers(mh_present)){
+  pol <- polygon[i,]
+  mh_polygon <- mask(crop(mh_present[[i]], pol), pol)
+  mh_polygon <- raster::as.data.frame(mh_polygon, xy = T)
+  mh_polygon <- quantile(na.omit(mh_polygon[,3]), probs = c(.95))
+  mh_present_bin <- reclassify(mh_present[[i]], c(mh_polygon,Inf,0))
+  mh_present_bin_f <- raster::stack(mh_present_bin_f, mh_present_bin)
+}
+
+plot(mh_present[[1]])
+plot(mh_polygon)
+plot(mh_present_bin_f)
 
 
 # Selección de esas distancias en PI
