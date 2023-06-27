@@ -6,10 +6,14 @@ library(RStoolbox)
 # Load data
 climatic_variables <- raster::stack(list.files("T:/MODCLIM_R_DATA/ENVIREM/", ".tif", full.names = T))
 
+library(stringr)
+nombres <- list.files("T:/MODCLIM_R_DATA/ENVIREM/", ".tif", full.names = T)
+
+
 study_area <- read_sf(list.files("T:/MODCLIM_R_DATA/CUENCAS", "\\.shp$", full.names = T))
 polygon <- read_sf(list.files("T:/MODCLIM_R_DATA/LIC/", "\\.shp$", full.names = T))
 polygon <- read_sf("T:/MODCLIM_R_DATA/LIC/LIC_SELECT.shp")
-
+polygon <- read_sf("T:/MODCLIM_R_DATA/THIC/THIC.shp")
 
 study_area <- st_transform(study_area, crs(projection(climatic_variables)))
 polygon <- st_transform(polygon, crs(projection(climatic_variables)))
@@ -42,7 +46,7 @@ data_present <- raster::as.data.frame(raster_present, xy = TRUE)
 data_present <- na.omit(data_present)
 
 #nrow(polygon)
-names <- polygon$lic_name
+names <- polygon$THIC
 
 mh_f <- data.frame(matrix(1,    # Create empty data frame
                   nrow = nrow(data_present),
@@ -85,22 +89,12 @@ plot(mh_present)
 
 # Umbral para establecer el corte percentil 90
 
-mh_present_bin_f <- raster::brick()
-for (i in 1:nlayers(mh_present)){
-  pol <- polygon[i,]
-  mh_polygon <- mask(crop(mh_present[[i]], pol), pol)
-  mh_polygon <- raster::as.data.frame(mh_polygon, xy = T)
-  mh_polygon <- quantile(na.omit(mh_polygon[,3]), probs = c(.95))
-  mh_present_bin <- reclassify(mh_present[[i]], c(mh_polygon,Inf,0))
-  mh_present_bin_f <- raster::stack(mh_present_bin_f, mh_present_bin)
-}
-
+-
 plot(mh_present[[1]])
 plot(mh_polygon)
-plot(mh_present_bin_f)
 
+names_THIC <- readxl::read_xlsx("T:/MODCLIM_R_DATA/THIC/THIC_names.xlsx")
+plot(mh_present_bin_f[[1]])
+names(mh_present_bin_f)
 
-# Selección de esas distancias en PI
-# present ----
-mh_present_bin <- reclassify(mh_present, c(mh_polygon,Inf,0))
-plot(mh_present_bin)
+monthly_pcp

@@ -1,124 +1,175 @@
 library(raster)
 library(tidyverse)
 library(sf)
-#CRU
-# Download: https://crudata.uea.ac.uk/cru/data/hrg/cru_ts_4.07/
+library(dismo)
 
-monthly_tmin <- raster::brick(here::here("T:/MODCLIM_R_DATA/CRU/cru_ts4.07.1901.2022.tmn.dat.nc"), varname = "tmn")
-monthly_tmax <- raster::brick(here::here("T:/MODCLIM_R_DATA/CRU/cru_ts4.07.1901.2022.tmx.dat.nc"), varname = "tmx")
-monthly_pcp <- raster::brick(here::here("T:/MODCLIM_R_DATA/CRU/cru_ts4.07.1901.2022.pre.dat.nc"), varname = "pre")
+# Load raster data
+tmin <- raster::stack(list.files("D:/DATA/CHELSA_SPAIN/TMIN/", pattern = ".tif", full.names = TRUE))
+tmax <- raster::stack(list.files("D:/DATA/CHELSA_SPAIN/TMAX/", pattern = ".tif", full.names = TRUE))
+pcp <-  raster::stack(list.files("D:/DATA/CHELSA_SPAIN/PCP/", pattern = ".tif", full.names = TRUE))
 
-res(monthly_tmin)
+paste0("The raster resolution is", res(tmin))
 
+# Load study area shp
 study_area <- read_sf(list.files("T:/MODCLIM_R_DATA/CUENCAS", "\\.shp$", full.names = T))
 
+# Reference system
+projection(tmin)
 reference_system <- "+proj=longlat +datum=WGS84 +no_defs"
 study_area <- st_transform(study_area, crs(reference_system))
+rm(reference_system)
 
+# Crop raster to study area
 beginCluster()
 
-monthly_tmin <- mask(crop(monthly_tmin, study_area), study_area)
-monthly_tmax <- mask(crop(monthly_tmax, study_area), study_area)
-monthly_pcp <- mask(crop(monthly_pcp, study_area), study_area)
+tmin <- mask(crop(tmin, study_area), study_area)
+tmax <- mask(crop(tmax, study_area), study_area)
+pcp <-  mask(crop(pcp, study_area), study_area)
 
 endCluster()
 
 
-### Monthly data to annual average ----
+# Period dates
+starting_year <- 1976
+finishing_year <- 2016
 
-year <- seq(1901, 2022, 1)
-### Maximum temperature ----
+year <- seq(starting_year, finishing_year, 1)
+
+rm(starting_year)
+rm(finishing_year)
+
+
+
+### Creating 19 bioclimatic variables (Worldclim)----
+
 beginCluster()
-annual_tmax <- raster::stack()
 
-for (i in 1:length(year)){
-  raster <- calc(raster::subset(monthly_tmax, grep(paste0(year[i]), names(monthly_tmax), value = T)), mean) # MEAN
-  annual_tmax <- raster::stack(annual_tmax, raster)
+bioclim_all <- raster::stack()
+
+for (i in 1:5){
+  monthly_tmax <- raster::subset(tmax, 
+                                 grep(paste0(year[i]), 
+                                      names(tmax), 
+                                      value = T))
+  monthly_tmax <- stack(monthly_tmax[[1]],
+                 monthly_tmax[[5]],
+                 monthly_tmax[[6]],
+                 monthly_tmax[[7]],
+                 monthly_tmax[[8]],
+                 monthly_tmax[[9]], 
+                 monthly_tmax[[10]],
+                 monthly_tmax[[11]],
+                 monthly_tmax[[12]],
+                 monthly_tmax[[2]],
+                 monthly_tmax[[3]],
+                 monthly_tmax[[4]])
+  
+  monthly_tmin <- raster::subset(tmin, 
+                                 grep(paste0(year[i]), 
+                                      names(tmin), 
+                                      value = T))
+  monthly_tmin <- stack(monthly_tmin[[1]],
+                        monthly_tmin[[5]],
+                        monthly_tmin[[6]],
+                        monthly_tmin[[7]],
+                        monthly_tmin[[8]],
+                        monthly_tmin[[9]], 
+                        monthly_tmin[[10]],
+                        monthly_tmin[[11]],
+                        monthly_tmin[[12]],
+                        monthly_tmin[[2]],
+                        monthly_tmin[[3]],
+                        monthly_tmin[[4]])
+  
+  monthly_pcp <- raster::subset(pcp, 
+                                 grep(paste0(year[i]), 
+                                      names(pcp), 
+                                      value = T))
+  monthly_pcp  <- stack(monthly_pcp[[1]],
+                        monthly_pcp[[5]],
+                        monthly_pcp[[6]],
+                        monthly_pcp[[7]],
+                        monthly_pcp[[8]],
+                        monthly_pcp[[9]], 
+                        monthly_pcp[[10]],
+                        monthly_pcp[[11]],
+                        monthly_pcp[[12]],
+                        monthly_pcp[[2]],
+                        monthly_pcp[[3]],
+                        monthly_pcp[[4]])
+  bioclim <- dismo::biovars(monthly_pcp, monthly_tmin, monthly_tmax) 
+  bioclim_all <- raster::stack(bioclim_all, bioclim)
 }
-names(annual_tmax) <- paste0("Y_", seq(1901, 2022, 1))
 endCluster()
 
-### Minimum temperature ----
-beginCluster()
-annual_tmin <- raster::stack()
+writeRaster(bioclim, "T:/MODCLIM_R_DATA/bioclim_ordenado.tif" )
 
-for (i in 1:length(year)){
-  raster <- calc(raster::subset(monthly_tmin, grep(paste0(year[i]), names(monthly_tmin), value = T)), mean) # MEAN
-  annual_tmin <- raster::stack(annual_tmin, raster)
+plot(raster)
+plot(bioclim)
+nlayers(bioclim_all)
+
+plot(monthly_pcp[[1:12]])
+###
+library(doParallel)
+registerDoParallel(cl <- makeCluster(4))
+
+bioclim_all <- raster::stack()
+
+foreach::foreach(i = 1:2) %dopar% {
+  monthly_tmax <- raster::subset(tmax, 
+                                 grep(paste0(year[i]), 
+                                      names(tmax), 
+                                      value = T))
+  monthly_tmax <- stack(monthly_tmax[[1]],
+                        monthly_tmax[[5]],
+                        monthly_tmax[[6]],
+                        monthly_tmax[[7]],
+                        monthly_tmax[[8]],
+                        monthly_tmax[[9]], 
+                        monthly_tmax[[10]],
+                        monthly_tmax[[11]],
+                        monthly_tmax[[12]],
+                        monthly_tmax[[2]],
+                        monthly_tmax[[3]],
+                        monthly_tmax[[4]])
+  
+  monthly_tmin <- raster::subset(tmin, 
+                                 grep(paste0(year[i]), 
+                                      names(tmin), 
+                                      value = T))
+  monthly_tmin <- stack(monthly_tmin[[1]],
+                        monthly_tmin[[5]],
+                        monthly_tmin[[6]],
+                        monthly_tmin[[7]],
+                        monthly_tmin[[8]],
+                        monthly_tmin[[9]], 
+                        monthly_tmin[[10]],
+                        monthly_tmin[[11]],
+                        monthly_tmin[[12]],
+                        monthly_tmin[[2]],
+                        monthly_tmin[[3]],
+                        monthly_tmin[[4]])
+  
+  monthly_pcp <- raster::subset(pcp, 
+                                grep(paste0(year[i]), 
+                                     names(pcp), 
+                                     value = T))
+  monthly_pcp  <- stack(monthly_pcp[[1]],
+                        monthly_pcp[[5]],
+                        monthly_pcp[[6]],
+                        monthly_pcp[[7]],
+                        monthly_pcp[[8]],
+                        monthly_pcp[[9]], 
+                        monthly_pcp[[10]],
+                        monthly_pcp[[11]],
+                        monthly_pcp[[12]],
+                        monthly_pcp[[2]],
+                        monthly_pcp[[3]],
+                        monthly_pcp[[4]])
+  bioclim <- dismo::biovars(monthly_pcp, monthly_tmin, monthly_tmax) 
+  bioclim_all <- raster::stack(bioclim_all, bioclim)
 }
-names(annual_tmin) <- paste0("Y_", seq(1901, 2022, 1))
-endCluster()
+stopCluster(cl)
 
-### Precipitation ----
-beginCluster()
-annual_pcp <- raster::stack()
-
-for (i in 1:length(year)){
-  raster <- calc(raster::subset(monthly_pcp, grep(paste0(year[i]), names(monthly_pcp), value = T)), sum) # MEAN
-  annual_pcp <- raster::stack(annual_pcp, raster)
-}
-names(annual_pcp) <- paste0("Y_", seq(1901, 2022, 1))
-endCluster()
-
-# Bioclimatic creation ----
-
-# BIO1 = Annual Mean Temperature
-beginCluster()
-BIO1 <- calc(raster::stack(annual_tmax, annual_tmin), mean)
-endCluster()
-# BIO2 = Mean Diurnal Range (Mean of monthly * (max temp - min temp))
-beginCluster()
-BIO2 <- raster::brick()
-
-for (i in 1:length(year)){
-  max_monthly_tmax <- calc(monthly_tmax, max)
-  min_monthly_tmin <- calc(monthly_tmin, min)
-  monthly_tmed <- stack(monthly_tmax, monthly_tmin)
-  monthly_tmed <- calc(monthly_tmed, mean)
-  raster <- monthly_tmed*(max_monthly_tmax - min_monthly_tmin)
-  BIO2 <- raster::stack(BIO2, raster)
-}
-
-BIO2 <- calc(BIO2, mean)
-endCluster()
-plot(BIO2)
-
-# BIO3 = Isothermality (BIO2/BIO7) (×100)
-BIO3 <- BIO2/BIO7
-# BIO4 = Temperature Seasonality (standard deviation ×100)
-# 
-# BIO5 = Max Temperature of Warmest Month
-BIO5 <- calc(monthly_tmax, mean)
-
-# BIO6 = Min Temperature of Coldest Month
-BIO6 <- calc(monthly_tmin, mean)
-
-# BIO7 = Temperature Annual Range (BIO5-BIO6)
-BIO7 <- BIO5-BIO6
-
-# BIO8 = Mean Temperature of Wettest Quarter
-# 
-# BIO9 = Mean Temperature of Driest Quarter
-# 
-# BIO10 = Mean Temperature of Warmest Quarter
-# 
-# BIO11 = Mean Temperature of Coldest Quarter
-# 
-# BIO12 = Annual Precipitation
-BIO12 <- calc(PCP_annual, mean)
-
-# BIO13 = Precipitation of Wettest Month
-# 
-# BIO14 = Precipitation of Driest Month
-# 
-# BIO15 = Precipitation Seasonality (Coefficient of Variation)
-# 
-# BIO16 = Precipitation of Wettest Quarter
-# 
-# BIO17 = Precipitation of Driest Quarter
-# 
-# BIO18 = Precipitation of Warmest Quarter
-# 
-# BIO19 = Precipitation of Coldest Quarter
-
-
+######################################################
+# Climate velocity
