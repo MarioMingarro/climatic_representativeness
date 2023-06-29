@@ -46,7 +46,7 @@ beginCluster()
 
 bioclim_all <- raster::stack()
 
-for (i in 1:5){
+for (i in 1:length(year)){
   monthly_tmax <- raster::subset(tmax, 
                                  grep(paste0(year[i]), 
                                       names(tmax), 
