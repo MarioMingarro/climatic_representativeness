@@ -20,6 +20,7 @@ study_area <- st_transform(study_area, crs(reference_system))
 rm(reference_system)
 
 # Crop raster to study area
+#Skip if var were obtained whit function
 beginCluster()
 
 tmin <- mask(crop(tmin, study_area), study_area)
@@ -109,6 +110,8 @@ plot(bioclim)
 nlayers(bioclim_all)
 
 plot(monthly_pcp[[1:12]])
+
+
 ###
 library(doParallel)
 registerDoParallel(cl <- makeCluster(4))
@@ -169,6 +172,8 @@ foreach::foreach(i = 1:2) %dopar% {
   bioclim <- dismo::biovars(monthly_pcp, monthly_tmin, monthly_tmax) 
   bioclim_all <- raster::stack(bioclim_all, bioclim)
 }
+
+stopImplicitCluster()
 stopCluster(cl)
 
 ######################################################

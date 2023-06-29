@@ -1,5 +1,29 @@
+# Download current chelsa predictions
+# https://chelsa-climate.org/timeseries/
 
-#Download future chelsa predictions
+study_area <- read_sf(list.files("T:/MODCLIM_R_DATA/analysis/", "\\.shp$", full.names = T))
+download_path <- "T:/CHELSA_PRESENTE/"
+
+
+# Monthly precipitation amount
+
+chelsa_present_pcp <- function(download_path){
+  data <- readLines("pcp_present_1980_2018_download_path.txt")
+  for(i in 1:length(data_pediod_model_scenario)){
+    dir.create(paste0(download_path, "pcp"))
+    directory <- paste0(download_path, "pcp/")
+    url <- data[i]
+    name <- paste0("pr_", str_sub(sub(".*pr_", "", data[i]),1,7), ".tif")
+    download.file(url, destfile = paste0(directory,"raster.tif"), mode="wb")
+    raster <- raster(paste0(directory,"raster.tif"))
+    raster <- raster::mask(crop(raster, study_area), study_area)
+    raster <- raster/100
+    writeRaster(raster, paste0(directory,name))
+  }
+}
+
+
+# Download future chelsa predictions
 # https://chelsa-climate.org/cmip6/
 
 # Monthly precipitation amount
