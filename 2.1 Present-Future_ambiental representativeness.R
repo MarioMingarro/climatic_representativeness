@@ -27,16 +27,15 @@ present_climatic_variables <- projectRaster(climatic_variables, crs = reference_
 future_climatic_variables <- raster::stack(list.files("T:/MODCLIM_R_DATA/ANALISIS/CLIMA/FUTURO", "\\.tif$", full.names = T))
 future_climatic_variables <- projectRaster(climatic_variables, crs = reference_system)
 
-# Crop raster to study area
-present_climatic_variables <-  raster::mask(crop(present_climatic_variables, study_area), study_area)
-future_climatic_variables <-  raster::mask(crop(future_climatic_variables, study_area), study_area)
-
 # Geomorphological representativeness ----
-geomorphologic_variables <-  raster::stack(list.files("T:/MODCLIM_R_DATA/analysis/geomophological/", ".tif", full.names = T))
+geomorphologic_variables <-  raster::stack(list.files("T:/MODCLIM_R_DATA/ANALISIS/GEO/IP/2/", ".tif", full.names = T))
 geomorphologic_variables <- projectRaster(geomorphologic_variables, crs = reference_system)
 
 # Crop raster to study area
+present_climatic_variables <-  raster::mask(crop(present_climatic_variables, study_area), study_area)
+future_climatic_variables <-  raster::mask(crop(future_climatic_variables, study_area), study_area)
 geomorphologic_variables <-  mask(crop(geomorphologic_variables, study_area), study_area)
+
 
 
 # Climate change variables
@@ -55,31 +54,40 @@ PCA_geomorphologic_variables <- RStoolbox::rasterPCA(geomorphologic_variables, s
 # PCA results
 summary(PCA_present_climatic_variables$model)
 summary(PCA_future_climatic_variables$model)
-
+summary(PCA_geomorphologic_variables$model)
 
 
 round(PCA_present_climatic_variables$model$loadings[,1:6],3)
 round(PCA_future_climatic_variables$model$loadings[,1:6],3)
+round(PCA_geomorphologic_variables$model$loadings[,1:5],3)
 
-selected_PCA_PCA_present_climatic_variables <- PCA_present_climatic_variables$map[[1:5]]
-selected_PCA_PCA_PCA_future_climatic_variables<- PCA_future_climatic_variables$map[[1:5]]
-selected_PCA_geomorphological_variable <- geomorphologic_PCA$map[[1:3]]
+selected_PCA_present_climatic_variables <- PCA_present_climatic_variables$map[[1:4]]
+selected_PCA_future_climatic_variables <- PCA_future_climatic_variables$map[[1:4]]
+selected_PCA_geomorphological_variable <- PCA_geomorphologic_variables$map[[1:4]]
 
-plot(selected_PCA_PCA_present_climatic_variables)
+plot(selected_PCA_present_climatic_variables)
 
 
-writeRaster(selected_PCA_PCA_present_climatic_variables, "T:/MODCLIM_R_DATA/ANALISIS/PCA/PCA_present.tif ")
-writeRaster(selected_PCA_PCA_PCA_future_climatic_variables, "T:/MODCLIM_R_DATA/ANALISIS/PCA/PCA_future.tif ")
+writeRaster(selected_PCA_present_climatic_variables, "T:/MODCLIM_R_DATA/ANALISIS/PCA/PCA_present.tif ")
+writeRaster(selected_PCA_future_climatic_variables, "T:/MODCLIM_R_DATA/ANALISIS/PCA/PCA_future.tif ")
 writeRaster(selected_PCA_geomorphological_variable, "T:/MODCLIM_R_DATA/ANALISIS/PCA/PCA_geo.tif ")
 
+PCA_present <-selected_PCA_present_climatic_variables
+PCA_future <- selected_PCA_future_climatic_variables 
+PCA_geo <- selected_PCA_geomorphological_variable 
 
 ###########################################################################################################
 ####################################################################################
 
-PCA_present <- raster("T:/MODCLIM_R_DATA/ANALISIS/PCA/PCA_present.tif ")
-PCA_future <- raster("T:/MODCLIM_R_DATA/ANALISIS/PCA/PCA_future.tif ")
-PCA_geo <- raster("T:/MODCLIM_R_DATA/ANALISIS/PCA/PCA_geo.tif ")
+PCA_present <- raster::stack("T:/MODCLIM_R_DATA/ANALISIS/PCA/PCA_present.tif ")
+PCA_future <- raster::stack("T:/MODCLIM_R_DATA/ANALISIS/PCA/PCA_future.tif ")
+PCA_geo <- raster::stack("T:/MODCLIM_R_DATA/ANALISIS/PCA/PCA_geo.tif ")
+
+
 PCA_geo <- resample(PCA_geo, PCA_present, method='bilinear')
+
+delete <- c("PCA_present", "PCA_future", "PCA_geo", "study_area", "polygon")
+rm(list=(ls()[ls()!= delete]))
 
 # Load data
 study_area <- read_sf(list.files("T:/MODCLIM_R_DATA/ANALISIS", "\\.shp$", full.names = T))
@@ -100,48 +108,43 @@ PCA_geo <- raster::as.data.frame(PCA_geo, xy = TRUE)
 PCA_geo <- na.omit(PCA_geo)
 PCA_geo <- mutate(PCA_geo, Periodo = c("Presente"))
 
+data <- cbind(PCA_geo, PCA_present)
+
+str(PCA_future$x)
 data <- left_join(PCA_geo, PCA_present, by = c("x", "y"))
 data <- left_join(data, PCA_future, by = c("x", "y"))
 data <- na.omit(data)
-colnames(data) <- c("x", "y", "a", "a", "a", "a", "a", "a")
 
-data2 <- data[,1:4]
-data2 <- rbind(data2, data[,c(1, 2, 5, 6)] )
-data2 <- rbind(data2, data[,c(1, 2, 7, 8)] )
-# Create raster with 3 first PCA factors
-
-raster_present <- raster::stack(selected_PCA_PCA_present_climatic_variables, selected_PCA_PCA_PCA_future_climatic_variables, selected_PCA_geomorphological_variable) # n of factors
+colnames(data) <- c("a", "a", "a","a", "a", "a","a", "a", "a","a", "a", "a","a", "a", "a","a", "a")
+colnames(data) <- c("x", "y", "PC_1", "PC_2", "PC_3", "PC_4", "Period")
 
 
+data2 <- data[,1:7]
+data2 <- rbind(data2, data[,c(1,2, 8,9,10,11,12)])
+data2 <- rbind(data2, data[,c(1,2, 13,14,15,16, 17)])
+colnames(data2) <- c("x", "y", "PC_1", "PC_2", "PC_3", "PC_4", "Period")
 
-# Raster to datafame
-data_present <- raster::as.data.frame(raster_present, xy = TRUE)
-data_present <- na.omit(data_present)
+data <- data2
+rm(data2)
+#shp
+he renombrado los archivos
+PCA_present <- raster::stack("T:/MODCLIM_R_DATA/ANALISIS/PCA/PCA_present.tif ")
+PCA_future <- raster::stack("T:/MODCLIM_R_DATA/ANALISIS/PCA/PCA_future.tif ")
+PCA_geo <- raster::stack("T:/MODCLIM_R_DATA/ANALISIS/PCA/PCA_geo.tif ")
 
-selected_PCA_PCA_present_climatic_variables <- raster::as.data.frame(selected_PCA_PCA_present_climatic_variables, xy = TRUE)
-selected_PCA_PCA_present_climatic_variables <- na.omit(selected_PCA_PCA_present_climatic_variables)
-selected_PCA_PCA_present_climatic_variables <- mutate(selected_PCA_PCA_present_climatic_variables, Periodo = c("Presente"))
-
-selected_PCA_PCA_PCA_future_climatic_variables <- raster::as.data.frame(selected_PCA_PCA_PCA_future_climatic_variables, xy = TRUE)
-selected_PCA_PCA_PCA_future_climatic_variables <- na.omit(selected_PCA_PCA_PCA_future_climatic_variables)
-selected_PCA_PCA_PCA_future_climatic_variables <- mutate(selected_PCA_PCA_PCA_future_climatic_variables, Periodo = c("Futuro"))
-selected_PCA_geomorphological_variables <- raster::as.data.frame(selected_PCA_geomorphological_variables, xy = TRUE)
-selected_PCA_geomorphological_variables <- na.omit(selected_PCA_geomorphological_variables)
-data_presente <- mutate(data_presente, Periodo = c("Presente"))
-
-
+raster <- raster::stack(PCA_present, PCA_future, PCA_geo)
 #nrow(polygon)
 names <- polygon$ORIG_NAME
 
 mh_f <- data.frame(matrix(1,    # Create empty data frame
-                          nrow = nrow(data_present),
+                          nrow = nrow(raster),
                           ncol = length(names)))
 
 names(mh_f) <- names
 beginCluster()
 for (i in 1:nrow(polygon)){
   pol <- polygon[i,]
-  raster_polygon <- mask(crop(raster_present, pol), pol)
+  raster_polygon <- raster::mask(raster::crop(raster, pol), pol)
   data_polygon <- raster::as.data.frame(raster_polygon, xy = TRUE)
   data_polygon <- na.omit(data_polygon)
   
