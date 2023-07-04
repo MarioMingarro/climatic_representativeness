@@ -4,9 +4,9 @@ library(sf)
 library(dismo)
 
 # Load raster data
-tmin <- raster::stack(list.files("D:/DATA/CHELSA_SPAIN/TMIN/", pattern = ".tif", full.names = TRUE))
-tmax <- raster::stack(list.files("D:/DATA/CHELSA_SPAIN/TMAX/", pattern = ".tif", full.names = TRUE))
-pcp <-  raster::stack(list.files("D:/DATA/CHELSA_SPAIN/PCP/", pattern = ".tif", full.names = TRUE))
+tmin <- raster::stack(list.files("T:/MODCLIM_R_DATA/PRESENT/TMIN/", pattern = ".tif", full.names = TRUE))
+tmax <- raster::stack(list.files("T:/MODCLIM_R_DATA/PRESENT/TMAX/", pattern = ".tif", full.names = TRUE))
+pcp <-  raster::stack(list.files("T:/MODCLIM_R_DATA/PRESENT/PCP/", pattern = ".tif", full.names = TRUE))
 
 paste0("The raster resolution is", res(tmin))
 

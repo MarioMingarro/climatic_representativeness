@@ -37,7 +37,7 @@ scenario <- c("ssp126", "ssp370", "ssp585")
 period   <- period[p]
 model    <- model[m]
 scenario <- scenario[s]
-download_path <- "T:/CHELSA_FUTURE/"
+download_path <- "T:/MODCLIM_R_DATA/DESCARGA"
 
-chelsa_future_tmax(period, model, scenario, download_path)
+chelsa_future_pcp(period, model, scenario, download_path)
 
