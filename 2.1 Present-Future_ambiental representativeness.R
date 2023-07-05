@@ -37,11 +37,58 @@ future_climatic_variables <-  raster::mask(crop(future_climatic_variables, geomo
 geomorphologic_variables <-  mask(crop(geomorphologic_variables, present_climatic_variables[[1]]), present_climatic_variables[[1]])
 
 
-variables <- raster::stack(present_climatic_variables, future_climatic_variables, geomorphologic_variables)
-cor <-layerStats(variables,'pearson')
+present_climatic_variables <- raster::as.data.frame(present_climatic_variables, xy = TRUE)
+future_climatic_variables <- raster::as.data.frame(future_climatic_variables, xy = TRUE)
+geomorphologic_variables <- raster::as.data.frame(geomorphologic_variables, xy = TRUE)
 
-# Climate change variables
-#climatic_change_variables <-
+
+present_climatic_variables<-na.omit(present_climatic_variables)
+future_climatic_variables <-na.omit(future_climatic_variables)
+geomorphologic_variables <- na.omit(geomorphologic_variables)
+
+colnames(present_climatic_variables) <- c("x","y","CHELSA_bio1","CHELSA_bio10","CHELSA_bio11","CHELSA_bio12","CHELSA_bio13","CHELSA_bio14",
+"CHELSA_bio15","CHELSA_bio16","CHELSA_bio17","CHELSA_bio18","CHELSA_bio19","CHELSA_bio2","CHELSA_bio3",
+"CHELSA_bio4","CHELSA_bio5","CHELSA_bio6","CHELSA_bio7","CHELSA_bio8","CHELSA_bio9")
+
+
+colnames(future_climatic_variables) <- colnames(present_climatic_variables)
+library(corrplot)
+library(caret)
+
+cor <- cor(present_climatic_variables[,3:21])
+
+drop = findCorrelation(cor, cutoff = .8)
+drop = names(present_climatic_variables[,3:21])[drop]
+present_climatic_variables <- present_climatic_variables[!names(present_climatic_variables) %in% drop]
+future_climatic_variables <- future_climatic_variables[!names(future_climatic_variables) %in% drop]
+
+
+cor <- cor(geomorphologic_variables[,3:8])
+
+drop = findCorrelation(cor, cutoff = .8)
+drop = names(geomorphologic_variables[,3:8])[drop]
+geomorphologic_variables <- geomorphologic_variables[!names(geomorphologic_variables) %in% drop]
+
+corrplot(cor(present_climatic_variables[3:11]),
+         method = "number",
+         type = "upper")
+corrplot(cor(future_climatic_variables[3:11]),
+         method = "number",
+         type = "upper")
+corrplot(cor(geomorphologic_variables[3:6]),
+         method = "number",
+         type = "upper")
+
+present_climatic_variables <- mutate(present_climatic_variables, Periodo = c("Presente"))
+future_climatic_variables <- mutate(future_climatic_variables, Periodo = c("Futuro"))
+geomorphologic_variables <- mutate(geomorphologic_variables, Periodo = c("geo"))
+
+#no hace el join bien######################################################
+present_climatic_variables <- left_join(present_climatic_variables, geomorphologic_variables, by = c("x", "y"))
+future_climatic_variables <- left_join(future_climatic_variables, geomorphologic_variables, by = c("x", "y"))
+
+colnames(futuro) <- colnames(presente)
+data <- rbind(present_climatic_variables, future_climatic_variables)
 
 # PCA ----
 # Climatic representativeness
