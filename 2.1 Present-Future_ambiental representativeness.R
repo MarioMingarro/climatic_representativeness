@@ -3,92 +3,194 @@ library(sf)
 library(tidyverse)
 library(RStoolbox)
 library(stringr)
+library(corrplot)
+library(caret)
 
-# Load data
+gc(reset = T)
+
+# Load data ----
+# Climatic representativeness -----
+present_climatic_variables <- raster::stack(list.files("T:/MODCLIM_R_DATA/ANALISIS/CLIMA/PRESENT", "\\.tif$", full.names = T))
+
+# Climatic representativeness -----
+future_climatic_variables <- raster::stack(list.files("T:/MODCLIM_R_DATA/ANALISIS/CLIMA/FUTURO/IPSL", "\\.tif$", full.names = T))
+
+names(present_climatic_variables) <- c("CHELSA_bio1","CHELSA_bio10","CHELSA_bio11","CHELSA_bio12","CHELSA_bio13","CHELSA_bio14",
+                                       "CHELSA_bio15","CHELSA_bio16","CHELSA_bio17","CHELSA_bio18","CHELSA_bio19","CHELSA_bio2",
+                                       "CHELSA_bio3","CHELSA_bio4","CHELSA_bio5","CHELSA_bio6","CHELSA_bio7","CHELSA_bio8","CHELSA_bio9")
+names(future_climatic_variables) <- c("CHELSA_bio1","CHELSA_bio10","CHELSA_bio11","CHELSA_bio12","CHELSA_bio13","CHELSA_bio14",
+                                       "CHELSA_bio15","CHELSA_bio16","CHELSA_bio17","CHELSA_bio18","CHELSA_bio19","CHELSA_bio2",
+                                      "CHELSA_bio3","CHELSA_bio4","CHELSA_bio5","CHELSA_bio6","CHELSA_bio7","CHELSA_bio8","CHELSA_bio9")
+
 study_area <- read_sf(list.files("T:/MODCLIM_R_DATA/ANALISIS", "\\.shp$", full.names = T))
 
 polygon <- read_sf("T:/MODCLIM_R_DATA/ANALISIS/NP/national_parks_2.shp")
 
 
 # Reference system
-reference_system <- "+init=epsg:4326"
-reference_system <- "+proj=longlat +datum=WGS84 +no_defs"
-study_area <- st_transform(study_area, crs(reference_system))
-polygon <- st_transform(polygon, crs(reference_system))
+reference_system <- projection(present_climatic_variables) # "+proj=longlat +datum=WGS84 +no_defs"
 
+if(compareCRS(present_climatic_variables, future_climatic_variables) == TRUE) {
+  print("Same Reference System")
+} else {
+  future_climatic_variables <- projectRaster(future_climatic_variables, crs = reference_system)
+}
 
-plot(polygon)
+if(compareCRS(study_area, present_climatic_variables) == TRUE) {
+  print("Same Reference System")
+} else {
+  study_area <- st_transform(study_area, crs(reference_system))
+}
 
-# Climatic representativeness -----
-present_climatic_variables <- raster::stack(list.files("T:/MODCLIM_R_DATA/ANALISIS/CLIMA/PRESENT", "\\.tif$", full.names = T))
-present_climatic_variables <- projectRaster(climatic_variables, crs = reference_system)
+if(compareCRS(polygon, present_climatic_variables) == TRUE) {
+  print("Same Reference System")
+} else {
+  polygon <- st_transform(polygon, crs(reference_system))
+}
 
-# Climatic representativeness -----
-future_climatic_variables <- raster::stack(list.files("T:/MODCLIM_R_DATA/ANALISIS/CLIMA/FUTURO", "\\.tif$", full.names = T))
-future_climatic_variables <- projectRaster(climatic_variables, crs = reference_system)
-
-# Geomorphological representativeness ----
-geomorphologic_variables <-  raster::stack(list.files("T:/MODCLIM_R_DATA/ANALISIS/GEO/IP/2/", ".tif", full.names = T))
-geomorphologic_variables <- projectRaster(geomorphologic_variables, crs = reference_system)
 
 # Crop raster to study area
-present_climatic_variables <-  raster::mask(crop(present_climatic_variables, geomorphologic_variables[[1]]), geomorphologic_variables[[1]])
-future_climatic_variables <-  raster::mask(crop(future_climatic_variables, geomorphologic_variables[[1]]), geomorphologic_variables[[1]])
-geomorphologic_variables <-  mask(crop(geomorphologic_variables, present_climatic_variables[[1]]), present_climatic_variables[[1]])
+present_climatic_variables <-  raster::mask(crop(present_climatic_variables, study_area), study_area)
+future_climatic_variables  <-  raster::mask(crop(future_climatic_variables,  study_area), study_area)
+
+# Extract raster data
+data_present_climatic_variables <- raster::as.data.frame(present_climatic_variables, xy = TRUE)
+data_future_climatic_variables <- raster::as.data.frame(future_climatic_variables, xy = TRUE)
+
+# Delete NA
+data_present_climatic_variables<-na.omit(data_present_climatic_variables)
+data_future_climatic_variables <-na.omit(data_future_climatic_variables)
+
+# Rename columns
+colnames(data_present_climatic_variables) <- c("x","y","CHELSA_bio1","CHELSA_bio10","CHELSA_bio11","CHELSA_bio12",
+                                               "CHELSA_bio13","CHELSA_bio14","CHELSA_bio15","CHELSA_bio16","CHELSA_bio17",
+                                               "CHELSA_bio18","CHELSA_bio19","CHELSA_bio2","CHELSA_bio3","CHELSA_bio4",
+                                               "CHELSA_bio5","CHELSA_bio6","CHELSA_bio7","CHELSA_bio8","CHELSA_bio9")
+
+colnames(data_future_climatic_variables) <- colnames(data_present_climatic_variables)
 
 
-present_climatic_variables <- raster::as.data.frame(present_climatic_variables, xy = TRUE)
-future_climatic_variables <- raster::as.data.frame(future_climatic_variables, xy = TRUE)
-geomorphologic_variables <- raster::as.data.frame(geomorphologic_variables, xy = TRUE)
+###################################################
+# Correlation between variables ----
+cor <- cor(data_present_climatic_variables[,3:21])
+
+#Select variables less correlated 
+drop_1  <-  findCorrelation(cor, cutoff = .8)
+drop  <-  names(data_present_climatic_variables[,3:21])[drop_1]
+data_present_climatic_variables <- data_present_climatic_variables[!names(data_present_climatic_variables) %in% drop]
+data_future_climatic_variables <- data_future_climatic_variables[!names(data_future_climatic_variables) %in% drop]
 
 
-present_climatic_variables<-na.omit(present_climatic_variables)
-future_climatic_variables <-na.omit(future_climatic_variables)
-geomorphologic_variables <- na.omit(geomorphologic_variables)
-
-colnames(present_climatic_variables) <- c("x","y","CHELSA_bio1","CHELSA_bio10","CHELSA_bio11","CHELSA_bio12","CHELSA_bio13","CHELSA_bio14",
-"CHELSA_bio15","CHELSA_bio16","CHELSA_bio17","CHELSA_bio18","CHELSA_bio19","CHELSA_bio2","CHELSA_bio3",
-"CHELSA_bio4","CHELSA_bio5","CHELSA_bio6","CHELSA_bio7","CHELSA_bio8","CHELSA_bio9")
+present_climatic_variables <- dropLayer(present_climatic_variables, names(present_climatic_variables)[drop_1])
+future_climatic_variables <- dropLayer(future_climatic_variables, names(future_climatic_variables)[drop_1])
 
 
-colnames(future_climatic_variables) <- colnames(present_climatic_variables)
-library(corrplot)
-library(caret)
+#corrplot(cor(data_present_climatic_variables[3:11]),
+#         method = "number",
+#         type = "upper")
+#corrplot(cor(data_future_climatic_variables[3:11]),
+#         method = "number",
+#         type = "upper")
 
-cor <- cor(present_climatic_variables[,3:21])
+# Add field period 
+data_present_climatic_variables <- mutate(data_present_climatic_variables, Period = c("Present"),  .after = "y")
+data_future_climatic_variables  <- mutate(data_future_climatic_variables, Period = c("Future"),  .after = "y")
 
-drop = findCorrelation(cor, cutoff = .8)
-drop = names(present_climatic_variables[,3:21])[drop]
-present_climatic_variables <- present_climatic_variables[!names(present_climatic_variables) %in% drop]
-future_climatic_variables <- future_climatic_variables[!names(future_climatic_variables) %in% drop]
+# Join two dataset
+colnames(data_future_climatic_variables) <- colnames(data_present_climatic_variables)
+data <- rbind(data_present_climatic_variables, data_future_climatic_variables)
 
 
-cor <- cor(geomorphologic_variables[,3:8])
 
-drop = findCorrelation(cor, cutoff = .8)
-drop = names(geomorphologic_variables[,3:8])[drop]
-geomorphologic_variables <- geomorphologic_variables[!names(geomorphologic_variables) %in% drop]
+# Create name object
+names <- polygon$ORIG_NAME
 
-corrplot(cor(present_climatic_variables[3:11]),
-         method = "number",
-         type = "upper")
-corrplot(cor(future_climatic_variables[3:11]),
-         method = "number",
-         type = "upper")
-corrplot(cor(geomorphologic_variables[3:6]),
-         method = "number",
-         type = "upper")
 
-present_climatic_variables <- mutate(present_climatic_variables, Periodo = c("Presente"))
-future_climatic_variables <- mutate(future_climatic_variables, Periodo = c("Futuro"))
-geomorphologic_variables <- mutate(geomorphologic_variables, Periodo = c("geo"))
+# Mahalanobis distance ----
+# Create empty data frame
+mh_f <- data.frame(matrix(1,    
+                          nrow = nrow(data),
+                          ncol = length(names)))
 
-#no hace el join bien######################################################
-present_climatic_variables <- left_join(present_climatic_variables, geomorphologic_variables, by = c("x", "y"))
-future_climatic_variables <- left_join(future_climatic_variables, geomorphologic_variables, by = c("x", "y"))
+names(mh_f) <- names
 
-colnames(futuro) <- colnames(presente)
-data <- rbind(present_climatic_variables, future_climatic_variables)
+for (i in 1:nrow(polygon)){
+  pol <- polygon[i,]
+  raster_polygon <- raster::mask(raster::crop(present_climatic_variables, pol), pol)
+  data_polygon <- raster::as.data.frame(raster_polygon, xy = TRUE)
+  data_polygon <- na.omit(data_polygon)
+  colnames(data_polygon) <- 
+    c("x", "y", "CHELSA_bio13","CHELSA_bio14","CHELSA_bio15","CHELSA_bio2",
+    "CHELSA_bio3","CHELSA_bio4","CHELSA_bio6","CHELSA_bio8","CHELSA_bio9" )#paste("'",rep("A", length(data_polygon)),"'",collapse=", ",sep="")
+
+  mh <- mahalanobis(data[,4:length(data)], 
+                    colMeans(data_polygon[,3:length(data_polygon)]), 
+                    cov(data[,4:length(data)]), 
+                    inverted = F)
+  
+  # Agregar información espacial al reusltado de mh
+  mh_f[,i] <- mh
+}
+
+# Agregar informacion espacial al reusltado de mh
+mh <- cbind(data[,c(1:3)], mh_f)
+
+
+#Creamos raster
+mh_present<- raster::brick()
+
+for(j in 4:length(mh)){
+  mh_f <- dplyr::filter(mh, Period == "Present")
+  mh_f <- rasterFromXYZ(mh_f[, c(1:2,j)])
+  names(mh_f) <- colnames(mh[j])
+  mh_present <- raster::stack(mh_present, mh_f)
+}
+
+mh_futuro <- raster::brick()
+
+for(j in 4:length(mh)){
+  mh_f <- dplyr::filter(mh, Period == "Future")
+  mh_f <- rasterFromXYZ(mh_f[, c(1:2,j)])
+  names(mh_f) <- colnames(mh[j])
+  mh_futuro <- raster::stack(mh_futuro, mh_f)
+}
+
+for ( i in 1:nlayers(mh_present)){
+  writeRaster(mh_present[[i]], paste0("T:/MODCLIM_R_DATA/ANALISIS/RESULTADOS/PN/kk/mh_present_", names[i], "_.tif"), overwrite=TRUE)
+  writeRaster( mh_futuro[[i]], paste0("T:/MODCLIM_R_DATA/ANALISIS/RESULTADOS/PN/kk/mh_future_", names[i],   "_.tif"), overwrite=TRUE)
+}
+
+
+# Threshold selection
+mh_present_umbral <- raster::brick()
+mh_futuro_umbral <- raster::brick()
+
+for (i in 1:nlayers(mh_present)){
+  mh_poligono <- mask(crop(mh_present[[i]], polygon[i,]), polygon[i,])
+  mh_poligono <- raster::as.data.frame(mh_poligono, xy = T)
+  mh_poligono <- quantile(na.omit(mh_poligono[,3]), probs = c(.95))
+  mh_present_bin <- reclassify(mh_present[[i]], c(mh_poligono,Inf,NA))
+  mh_present_umbral <- raster::stack(mh_present_umbral, mh_present_bin)
+  mh_futuro_bin <- reclassify(mh_futuro[[i]], c(mh_poligono,Inf,NA))
+  mh_futuro_umbral <- raster::stack(mh_futuro_umbral, mh_futuro_bin)
+}
+
+# Export raster
+for ( i in 1:nlayers(mh_present_umbral)){
+  writeRaster(mh_present_umbral[[i]], paste0("T:/MODCLIM_R_DATA/ANALISIS/RESULTADOS/PN/mh_present_IPSL_2040_2070_SSP85", names[i], "_T.tif"), overwrite=TRUE)
+  writeRaster( mh_futuro_umbral[[i]],  paste0("T:/MODCLIM_R_DATA/ANALISIS/RESULTADOS/PN/mh_future_IPSL_2040_2070_SSP85", names[i],   "_T.tif"), overwrite=TRUE)
+}
+
+
+
+
+
+
+#############################################################################################
+############################################################################################
+###########################################################################################
+
+
 
 # PCA ----
 # Climatic representativeness
@@ -180,106 +282,3 @@ data <- rbind(data, data_PCA_future)
 
 
 
-raster <- raster::stack(PCA_present, PCA_future, PCA_geo)
-#nrow(polygon)
-names <- polygon$ORIG_NAME
-
-
-mh_f <- data.frame(matrix(1,    # Create empty data frame
-                          nrow = nrow(data),
-                          ncol = length(names)))
-
-names(mh_f) <- names
-
-for (i in 1:nrow(polygon)){
-  pol <- polygon[i,]
-  raster_polygon <- raster::mask(raster::crop(raster, pol), pol)
-  data_polygon <- raster::as.data.frame(raster_polygon, xy = TRUE)
-  data_polygon <- na.omit(data_polygon)
-  colnames(data_polygon) <- c("a", "a", "a","a", "a", "a","a", "a", "a","a", "a", "a","a", "a")
-  data_polygon_1 <- rbind(data_polygon[,c(1:6)], data_polygon[,c(1:2, 7,8,9,10)])
-  data_polygon_1 <- rbind(data_polygon_1, data_polygon[,c(1:2, 11,12,13,14)])
-  data_polygon <- data_polygon_1
-  colnames(data_polygon) <- c("x", "y", "PC_1", "PC_2", "PC_3", "PC_4")
-  
-  # Mahalanobis distance
-  
-  mh <- mahalanobis(data[,3:6], 
-                    colMeans(data_polygon[,3:6]), 
-                    cov(data[,3:6]), 
-                    inverted = F)
-  
-  # Agregar información espacial al reusltado de mh
-  mh_f[,i] <- mh
-}
-
-# Agregar informacion espacial al reusltado de mh
-mh <- cbind(data[,c(1:2, 7,8)], mh_f)
-
-
-#Creamos raster
-mh_presente<- raster::brick()
-
-for(j in 5:length(mh)){
-  mh_f <- dplyr::filter(mh, Period == "Presente")
-  mh_f <- dplyr::filter(mh_f, mh_f$Var == "climatic")
-  mh_f <- rasterFromXYZ(mh_f[, c(1:2,j)])
-  names(mh_f) <- colnames(mh[j])
-  mh_presente <- raster::stack(mh_presente, mh_f)
-}
-
-mh_futuro <- raster::brick()
-
-for(j in 5:length(mh)){
-  mh_f <- dplyr::filter(mh, Period == "Futuro")
-  mh_f <- rasterFromXYZ(mh_f[, c(1:2,j)])
-  names(mh_f) <- colnames(mh[j])
-  mh_futuro <- raster::stack(mh_futuro, mh_f)
-}
-
-writeRaster(mh_presente, "T:/MODCLIM_R_DATA/ANALISIS/RESULTADOS/mh_presente_NP.tif")
-writeRaster(mh_futuro, "T:/MODCLIM_R_DATA/ANALISIS/RESULTADOS/mh_future_NP.tif")
-plot(mh_futuro[[1]])
-
-endCluster()
-
-
-plot(mh_presente)
-nlayers(mh_presente)
-
-# Umbral para establecer el corte percentil 90
-mh_present_umbral <- raster::brick()
-mh_futuro_umbral <- raster::brick()
-
-for (i in 1:nlayers(mh_presente)){
-  mh_poligono <- mask(crop(mh_presente[[i]], polygon[i,]), polygon[i,])
-  mh_poligono <- raster::as.data.frame(mh_poligono, xy = T)
-  mh_poligono <- quantile(na.omit(mh_poligono[,3]), probs = c(.90))
-  mh_presente_bin <- reclassify(mh_presente[[i]], c(mh_poligono,Inf,NA))
-  mh_present_umbral <- raster::stack(mh_present_umbral, mh_presente_bin)
-  mh_futuro_bin <- reclassify(mh_futuro[[i]], c(mh_poligono,Inf,NA))
-  mh_futuro_umbral <- raster::stack(mh_futuro_umbral, mh_futuro_bin)
-}
-plot(mh_present_umbral)
-plot(mh_futuro_umbral)
-mh_futuro_umbral <- raster::brick()
-
-for (i in 1:nlayers(mh_futuro_umbral)){
-  mh_poligono <- mask(crop(mh_futuro[[i]], polygon[i,]), polygon[i,])
-  mh_poligono <- raster::as.data.frame(mh_poligono, xy = T)
-  mh_poligono <- quantile(na.omit(mh_poligono[,3]), probs = c(.90))
-  mh_futuro_bin <- reclassify(mh_futuro_umbral[[i]], c(mh_poligono,Inf,NA))
-  mh_futuro_umbral <- raster::stack(mh_futuro_umbral, mh_futuro_bin)
-}
-
-writeRaster(mh_present_umbral, "T:/MODCLIM_R_DATA/ANALISIS/RESULTADOS/mh_present_umbral_NP.tif")
-writeRaster(mh_futuro_umbral, "T:/MODCLIM_R_DATA/ANALISIS/RESULTADOS/mh_futuro_umbral_NP.tif")
-
-plot(mh_present_umbral)
-plot(mh_futuro_umbral)
-
-# Selección de esas distancias en PI
-# Presente ----
-mh_presente_bin <- reclassify(mh_f, c(mh_poligono,Inf,NA))
-plot(mh_presente_bin)
-plot(polygon[1], add = T)
