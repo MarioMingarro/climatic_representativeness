@@ -187,6 +187,120 @@ mh_present_umbral <- projectRaster(mh_present_umbral, crs = reference_system)
 ############################################################################################
 ###########################################################################################
 
+dem <- raster("T:/MODCLIM_R_DATA/ANALISIS/SLOVENIA/DEM_triglav.tif")
+dem_future <- raster("T:/MODCLIM_R_DATA/ANALISIS/SLOVENIA/DEM_future.tif")
+dem <- raster::aggregate(dem, 8)
+dem_future <- raster::aggregate(dem_future, 8)
+
+geo <- terrain(dem, opt=c("slope", "aspect", "TPI", "TRI", "roughness"), unit='degrees')
+geo_future <- terrain(dem_future, opt=c("slope", "aspect", "TPI", "TRI", "roughness"), unit='degrees')
+plot(geo_future)
+writeRaster(geo, "T:/MODCLIM_R_DATA/ANALISIS/SLOVENIA/geo.tif",overwrite=TRUE)
+writeRaster(geo_future, "T:/MODCLIM_R_DATA/ANALISIS/SLOVENIA/geo_future.tif",overwrite=TRUE)
+# Extract raster data
+data_geo <- raster::as.data.frame(geo, xy = TRUE)
+data_geo_future <- raster::as.data.frame(geo_future, xy = TRUE)
+
+# Delete NA
+data_geo<-na.omit(data_geo)
+data_geo_future <-na.omit(data_geo_future)
+
+
+###################################################
+# Correlation between variables ----
+cor <- cor(data_geo[,3:7])
+
+#Select variables less correlated 
+drop_1  <-  findCorrelation(cor, cutoff = .8)
+drop  <-  names(data_geo[,3:7])[drop_1]
+data_geo <- data_geo[!names(data_geo) %in% drop]
+data_geo_future <- data_geo_future[!names(data_geo_future) %in% drop]
+
+
+geo <- dropLayer(geo, names(geo)[drop_1])
+geo_future <- dropLayer(geo_future, names(geo)[drop_1])
+
+
+corrplot(cor(data_geo[4:length(data_geo)]),
+         method = "number",
+         type = "upper")
+corrplot(cor(data_geo_future[3:length(data_geo_future)]),
+         method = "number",
+         type = "upper")
+
+
+# Add field period 
+data_geo <- mutate(data_geo, Period = c("PN"),  .after = "y")
+data_geo_future  <- mutate(data_geo_future, Period = c("OUT"),  .after = "y")
+
+data <- rbind(data_geo, data_geo_future)
+
+
+mh <- mahalanobis(data[,4:length(data)], 
+                  colMeans(data_geo[,4:length(data_geo)]), 
+                  cov(data[,4:length(data)]), 
+                  inverted = F)
+
+
+
+# Agregar informacion espacial al reusltado de mh
+mh2 <- cbind(data[,c(1:3)], mh)
+
+mh_pre <- dplyr::filter(mh2, Period == "PN")
+mh_pre <- rasterFromXYZ(mh_pre[, c(1,2,4)])
+
+mh_fut <- dplyr::filter(mh2, Period == "OUT")
+mh_fut <- rasterFromXYZ(mh_fut[, c(1,2,4)])
+
+writeRaster(mh_pre, "T:/MODCLIM_R_DATA/ANALISIS/SLOVENIA/mh_geo_pre.tif",overwrite=TRUE)
+writeRaster(mh_fut, "T:/MODCLIM_R_DATA/ANALISIS/SLOVENIA/mh_geo_fut.tif",overwrite=TRUE)
+
+
+
+
+
+
+polygon <- read_sf("T:/MODCLIM_R_DATA/ANALISIS/PAS/national_parks_slovenia.shp")
+if(compareCRS(polygon, geo) == TRUE) {
+  print("Same Reference System")
+} else {
+  polygon <- st_transform(polygon, projection(geo))
+}
+
+  mh_polygon <- mask(crop(mh_pre, polygon), polygon)
+  mh_polygon <- raster::as.data.frame(mh_polygon, xy = T)
+  mh_polygon <- quantile(na.omit(mh_pre[,3]), probs = c(.90))
+  mh_pre_bin <- reclassify(mh_pre, c(mh_polygon,Inf,NA))
+  mh_fut_bin <- reclassify(mh_fut, c(mh_polygon,Inf,NA))
+
+  writeRaster(mh_pre, "T:/MODCLIM_R_DATA/ANALISIS/SLOVENIA/mh_geo_pre_Threshold.tif",overwrite=TRUE)
+  writeRaster(mh_fut, "T:/MODCLIM_R_DATA/ANALISIS/SLOVENIA/mh_geo_fut_Threshold.tif",overwrite=TRUE)
+  
+# Export raster
+for ( i in 4){
+  writeRaster(mh_present_umbral[[i]],  paste0("T:/MODCLIM_R_DATA/ANALISIS/RESULTADOS/Slovenia/RECIPIENT/mh_present_IPSL_2040_2070_SSP85", names[i], "_T.tif"), overwrite=TRUE)
+  writeRaster( mh_future_umbral[[i]],  paste0("T:/MODCLIM_R_DATA/ANALISIS/RESULTADOS/Slovenia/RECIPIENT/mh_future_IPSL_2040_2070_SSP85", names[i],   "_T.tif"), overwrite=TRUE)
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 # PCA ----
