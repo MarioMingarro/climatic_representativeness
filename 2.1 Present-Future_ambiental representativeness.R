@@ -13,7 +13,7 @@ gc(reset = T)
 present_climatic_variables <- raster::stack(list.files("T:/MODCLIM_R_DATA/ANALISIS/CLIMA/PRESENT", "\\.tif$", full.names = T))
 
 # Climatic representativeness -----
-future_climatic_variables <- raster::stack(list.files("T:/MODCLIM_R_DATA/ANALISIS/CLIMA/FUTURO/IPSL", "\\.tif$", full.names = T))
+future_climatic_variables <- raster::stack(list.files("T:/MODCLIM_R_DATA/ANALISIS/CLIMA/FUTURO/GFDL/SSP585", "\\.tif$", full.names = T))
 
 names(present_climatic_variables) <- c("CHELSA_bio1","CHELSA_bio10","CHELSA_bio11","CHELSA_bio12","CHELSA_bio13","CHELSA_bio14",
                                        "CHELSA_bio15","CHELSA_bio16","CHELSA_bio17","CHELSA_bio18","CHELSA_bio19","CHELSA_bio2",
@@ -22,9 +22,9 @@ names(future_climatic_variables) <- c("CHELSA_bio1","CHELSA_bio10","CHELSA_bio11
                                        "CHELSA_bio15","CHELSA_bio16","CHELSA_bio17","CHELSA_bio18","CHELSA_bio19","CHELSA_bio2",
                                       "CHELSA_bio3","CHELSA_bio4","CHELSA_bio5","CHELSA_bio6","CHELSA_bio7","CHELSA_bio8","CHELSA_bio9")
 
-study_area <- read_sf(list.files("T:/MODCLIM_R_DATA/ANALISIS", "\\.shp$", full.names = T))
+study_area <- read_sf("T:/MODCLIM_R_DATA/ANALISIS/slovenia_500km.shp")
 
-polygon <- read_sf("T:/MODCLIM_R_DATA/ANALISIS/NP/national_parks_2.shp")
+polygon <- read_sf("T:/MODCLIM_R_DATA/ANALISIS/PAS/nat_reg_parks_slovenia.shp")
 
 
 # Reference system
@@ -85,12 +85,12 @@ present_climatic_variables <- dropLayer(present_climatic_variables, names(presen
 future_climatic_variables <- dropLayer(future_climatic_variables, names(future_climatic_variables)[drop_1])
 
 
-#corrplot(cor(data_present_climatic_variables[3:11]),
-#         method = "number",
-#         type = "upper")
-#corrplot(cor(data_future_climatic_variables[3:11]),
-#         method = "number",
-#         type = "upper")
+corrplot(cor(data_present_climatic_variables[3:length(data_present_climatic_variables)]),
+         method = "number",
+         type = "upper")
+corrplot(cor(data_future_climatic_variables[3:length(data_present_climatic_variables)]),
+         method = "number",
+         type = "upper")
 
 # Add field period 
 data_present_climatic_variables <- mutate(data_present_climatic_variables, Period = c("Present"),  .after = "y")
@@ -119,10 +119,7 @@ for (i in 1:nrow(polygon)){
   raster_polygon <- raster::mask(raster::crop(present_climatic_variables, pol), pol)
   data_polygon <- raster::as.data.frame(raster_polygon, xy = TRUE)
   data_polygon <- na.omit(data_polygon)
-  colnames(data_polygon) <- 
-    c("x", "y", "CHELSA_bio13","CHELSA_bio14","CHELSA_bio15","CHELSA_bio2",
-    "CHELSA_bio3","CHELSA_bio4","CHELSA_bio6","CHELSA_bio8","CHELSA_bio9" )#paste("'",rep("A", length(data_polygon)),"'",collapse=", ",sep="")
-
+  
   mh <- mahalanobis(data[,4:length(data)], 
                     colMeans(data_polygon[,3:length(data_polygon)]), 
                     cov(data[,4:length(data)]), 
@@ -146,45 +143,45 @@ for(j in 4:length(mh)){
   mh_present <- raster::stack(mh_present, mh_f)
 }
 
-mh_futuro <- raster::brick()
+mh_future <- raster::brick()
 
 for(j in 4:length(mh)){
   mh_f <- dplyr::filter(mh, Period == "Future")
   mh_f <- rasterFromXYZ(mh_f[, c(1:2,j)])
   names(mh_f) <- colnames(mh[j])
-  mh_futuro <- raster::stack(mh_futuro, mh_f)
+  mh_future <- raster::stack(mh_future, mh_f)
 }
-
+plot(mh_future)
 for ( i in 1:nlayers(mh_present)){
-  writeRaster(mh_present[[i]], paste0("T:/MODCLIM_R_DATA/ANALISIS/RESULTADOS/PN/kk/mh_present_", names[i], "_.tif"), overwrite=TRUE)
-  writeRaster( mh_futuro[[i]], paste0("T:/MODCLIM_R_DATA/ANALISIS/RESULTADOS/PN/kk/mh_future_", names[i],   "_.tif"), overwrite=TRUE)
+  writeRaster(mh_present[[i]], paste0("T:/MODCLIM_R_DATA/ANALISIS/RESULTADOS/Slovenia/mh_present_IPSL_2040_2070_SSP85", names[i], ".tif"), overwrite=TRUE)
+  writeRaster( mh_future[[i]], paste0("T:/MODCLIM_R_DATA/ANALISIS/RESULTADOS/Slovenia/mh_future_IPSL_2040_2070_SSP85", names[i],   ".tif"), overwrite=TRUE)
 }
 
-
+plot(mh_present)
 # Threshold selection
 mh_present_umbral <- raster::brick()
-mh_futuro_umbral <- raster::brick()
+mh_future_umbral <- raster::brick()
 
 for (i in 1:nlayers(mh_present)){
-  mh_poligono <- mask(crop(mh_present[[i]], polygon[i,]), polygon[i,])
-  mh_poligono <- raster::as.data.frame(mh_poligono, xy = T)
-  mh_poligono <- quantile(na.omit(mh_poligono[,3]), probs = c(.95))
-  mh_present_bin <- reclassify(mh_present[[i]], c(mh_poligono,Inf,NA))
+  mh_polygon <- mask(crop(mh_present[[i]], polygon[i,]), polygon[i,])
+  mh_polygon <- raster::as.data.frame(mh_polygon, xy = T)
+  mh_polygon <- quantile(na.omit(mh_polygon[,3]), probs = c(.90))
+  mh_present_bin <- reclassify(mh_present[[i]], c(mh_polygon,Inf,NA))
   mh_present_umbral <- raster::stack(mh_present_umbral, mh_present_bin)
-  mh_futuro_bin <- reclassify(mh_futuro[[i]], c(mh_poligono,Inf,NA))
-  mh_futuro_umbral <- raster::stack(mh_futuro_umbral, mh_futuro_bin)
+  mh_future_bin <- reclassify(mh_future[[i]], c(mh_polygon,Inf,NA))
+  mh_future_umbral <- raster::stack(mh_future_umbral, mh_future_bin)
 }
 
 # Export raster
-for ( i in 1:nlayers(mh_present_umbral)){
-  writeRaster(mh_present_umbral[[i]], paste0("T:/MODCLIM_R_DATA/ANALISIS/RESULTADOS/PN/mh_present_IPSL_2040_2070_SSP85", names[i], "_T.tif"), overwrite=TRUE)
-  writeRaster( mh_futuro_umbral[[i]],  paste0("T:/MODCLIM_R_DATA/ANALISIS/RESULTADOS/PN/mh_future_IPSL_2040_2070_SSP85", names[i],   "_T.tif"), overwrite=TRUE)
+for ( i in 4){
+  writeRaster(mh_present_umbral[[i]],  paste0("T:/MODCLIM_R_DATA/ANALISIS/RESULTADOS/Slovenia/RECIPIENT/mh_present_IPSL_2040_2070_SSP85", names[i], "_T.tif"), overwrite=TRUE)
+  writeRaster( mh_future_umbral[[i]],  paste0("T:/MODCLIM_R_DATA/ANALISIS/RESULTADOS/Slovenia/RECIPIENT/mh_future_IPSL_2040_2070_SSP85", names[i],   "_T.tif"), overwrite=TRUE)
 }
 
+projection(mh_present_umbral)
+plot(mh_future_umbral)
 
-
-
-
+mh_present_umbral <- projectRaster(mh_present_umbral, crs = reference_system)
 
 #############################################################################################
 ############################################################################################
