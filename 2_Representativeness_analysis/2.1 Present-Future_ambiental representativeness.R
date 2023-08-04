@@ -157,10 +157,10 @@ plot(mh_present)
 
 # Export raster
 
-for ( i in 1:nlayers(mh_present)){
-  writeRaster(mh_present[[i]], paste0("T:/MODCLIM_R_DATA/ANALISIS/RESULTADOS/Slovenia/mh_present_IPSL_2040_2070_SSP85", names[i], ".tif"), overwrite=TRUE)
-  writeRaster( mh_future[[i]], paste0("T:/MODCLIM_R_DATA/ANALISIS/RESULTADOS/Slovenia/mh_future_IPSL_2040_2070_SSP85", names[i],   ".tif"), overwrite=TRUE)
-}
+#for ( i in 1:nlayers(mh_present)){
+#  writeRaster(mh_present[[i]], paste0("T:/MODCLIM_R_DATA/ANALISIS/RESULTADOS/Slovenia/mh_present_IPSL_2040_2070_SSP85", names[i], ".tif"), overwrite=TRUE)
+#  writeRaster( mh_future[[i]], paste0("T:/MODCLIM_R_DATA/ANALISIS/RESULTADOS/Slovenia/mh_future_IPSL_2040_2070_SSP85", names[i],   ".tif"), overwrite=TRUE)
+#}
 
 
 
@@ -178,6 +178,7 @@ for (i in 1:nlayers(mh_present)){
   mh_future_bin <- reclassify(mh_future[[i]], c(mh_polygon,Inf,NA))
   mh_future_umbral <- raster::stack(mh_future_umbral, mh_future_bin)
 }
+plot(mh_present_umbral)
 
 # Export raster
 for ( i in 1:nlayers(mh_present_umbral)){
@@ -185,13 +186,47 @@ for ( i in 1:nlayers(mh_present_umbral)){
   writeRaster( mh_future_umbral[[i]],  paste0("D:/REPRESENATTIVENESS/RAMSAR_RESULTS/mh_future_IPSL_2040_2070_SSP85", names[i],   "_T.tif"), overwrite=TRUE)
 }
 
-gc()
+######################
 
-projection(mh_present_umbral)
+reference_system <- projection("+init=epsg:25828") # "+proj=longlat +datum=WGS84 +no_defs"   
 
-plot(mh_future_umbral[[5]])
 
-mh_present_umbral <- projectRaster(mh_present_umbral, crs = reference_system)
+mh_present_umbral_2 <- projectRaster(mh_present_umbral, crs = reference_system)
+mh_future_umbral_2 <- projectRaster(mh_future_umbral, crs = reference_system)
+study_area <- st_transform(study_area, crs(reference_system))
+polygon <- st_transform(polygon, crs(reference_system))
+
+isolation <- data.frame(name=character(), 
+                        present_dist=numeric(), 
+                        future_dist=numeric())
+
+
+
+for (i in 1:nlayers(mh_present_umbral)){
+  aa <- data.frame(name="a", 
+                   present_dist=2, 
+                   future_dist=3)
+  pol <- polygon[i,]
+  pre_in <- raster::mask(mh_present_umbral, pol)
+  n_pre_in <- length(na.omit(pre_in@data@values))
+  pre_out <- raster::mask(mh_present_umbral, pol, inverse = T)
+  fut_out <- raster::mask(mh_future_umbral, pol, inverse = T)
+  pre_out <- rasterToPoints(pre_out)
+  fut_out <- rasterToPoints(fut_out)
+  
+  polygon <- as(polygon, 'Spatial')
+  pre_out <- SpatialPoints(pre_out[,1:2])
+  fut_out <- SpatialPoints(fut_out[,1:2])
+  
+  distance_pre <- sort(rgeos::gDistance(pre_out, pol, byid=TRUE))
+  distance_fut <- sort(rgeos::gDistance(fut_out, pol, byid=TRUE))
+  
+  
+  aa$name <- pol$NAME
+  aa$present_dist <-  mean(distance_pre[1:n_pre_in])
+  aa$future_dist <-  mean(distance_fut[1:n_pre_in])
+  isolation <- rbind(isolation, aa)
+}
 
 #############################################################################################
 ############################################################################################
