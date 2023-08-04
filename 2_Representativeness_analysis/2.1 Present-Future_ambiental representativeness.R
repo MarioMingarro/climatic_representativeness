@@ -10,10 +10,10 @@ gc(reset = T)
 
 # Load data ----
 # Climatic representativeness -----
-present_climatic_variables <- raster::stack(list.files("T:/MODCLIM_R_DATA/ANALISIS/CLIMA/PRESENT", "\\.tif$", full.names = T))
+present_climatic_variables <- raster::stack(list.files("D:/REPRESENATTIVENESS/CLIMA/PRESENT", "\\.tif$", full.names = T))
 
 # Climatic representativeness -----
-future_climatic_variables <- raster::stack(list.files("T:/MODCLIM_R_DATA/ANALISIS/CLIMA/FUTURO/GFDL/SSP585", "\\.tif$", full.names = T))
+future_climatic_variables <- raster::stack(list.files("D:/REPRESENATTIVENESS/CLIMA/FUTURO/GFDL/SSP585", "\\.tif$", full.names = T))
 
 names(present_climatic_variables) <- c("CHELSA_bio1","CHELSA_bio10","CHELSA_bio11","CHELSA_bio12","CHELSA_bio13","CHELSA_bio14",
                                        "CHELSA_bio15","CHELSA_bio16","CHELSA_bio17","CHELSA_bio18","CHELSA_bio19","CHELSA_bio2",
@@ -22,9 +22,9 @@ names(future_climatic_variables) <- c("CHELSA_bio1","CHELSA_bio10","CHELSA_bio11
                                        "CHELSA_bio15","CHELSA_bio16","CHELSA_bio17","CHELSA_bio18","CHELSA_bio19","CHELSA_bio2",
                                       "CHELSA_bio3","CHELSA_bio4","CHELSA_bio5","CHELSA_bio6","CHELSA_bio7","CHELSA_bio8","CHELSA_bio9")
 
-study_area <- read_sf("T:/MODCLIM_R_DATA/ANALISIS/slovenia_500km.shp")
+study_area <- read_sf("D:/REPRESENATTIVENESS/IP/IP.shp")
 
-polygon <- read_sf("T:/MODCLIM_R_DATA/ANALISIS/PAS/nat_reg_parks_slovenia.shp")
+polygon <- read_sf("D:/REPRESENATTIVENESS/ENP/RAMSAR/Selected_Ramsar.shp")
 
 
 # Reference system
@@ -129,12 +129,12 @@ for (i in 1:nrow(polygon)){
   mh_f[,i] <- mh
 }
 
-# Agregar informacion espacial al reusltado de mh
+# Agregar informacion espacial al resultado de mh
 mh <- cbind(data[,c(1:3)], mh_f)
 
 
 #Creamos raster
-mh_present<- raster::brick()
+mh_present <- raster::brick()
 
 for(j in 4:length(mh)){
   mh_f <- dplyr::filter(mh, Period == "Present")
@@ -151,13 +151,20 @@ for(j in 4:length(mh)){
   names(mh_f) <- colnames(mh[j])
   mh_future <- raster::stack(mh_future, mh_f)
 }
+
 plot(mh_future)
+plot(mh_present)
+
+# Export raster
+
 for ( i in 1:nlayers(mh_present)){
   writeRaster(mh_present[[i]], paste0("T:/MODCLIM_R_DATA/ANALISIS/RESULTADOS/Slovenia/mh_present_IPSL_2040_2070_SSP85", names[i], ".tif"), overwrite=TRUE)
   writeRaster( mh_future[[i]], paste0("T:/MODCLIM_R_DATA/ANALISIS/RESULTADOS/Slovenia/mh_future_IPSL_2040_2070_SSP85", names[i],   ".tif"), overwrite=TRUE)
 }
 
-plot(mh_present)
+
+
+
 # Threshold selection
 mh_present_umbral <- raster::brick()
 mh_future_umbral <- raster::brick()
@@ -173,13 +180,16 @@ for (i in 1:nlayers(mh_present)){
 }
 
 # Export raster
-for ( i in 4){
-  writeRaster(mh_present_umbral[[i]],  paste0("T:/MODCLIM_R_DATA/ANALISIS/RESULTADOS/Slovenia/RECIPIENT/mh_present_IPSL_2040_2070_SSP85", names[i], "_T.tif"), overwrite=TRUE)
-  writeRaster( mh_future_umbral[[i]],  paste0("T:/MODCLIM_R_DATA/ANALISIS/RESULTADOS/Slovenia/RECIPIENT/mh_future_IPSL_2040_2070_SSP85", names[i],   "_T.tif"), overwrite=TRUE)
+for ( i in 1:nlayers(mh_present_umbral)){
+  writeRaster(mh_present_umbral[[i]],  paste0("D:/REPRESENATTIVENESS/RAMSAR_RESULTS/mh_present_IPSL_2040_2070_SSP85", names[i], "_T.tif"), overwrite=TRUE)
+  writeRaster( mh_future_umbral[[i]],  paste0("D:/REPRESENATTIVENESS/RAMSAR_RESULTS/mh_future_IPSL_2040_2070_SSP85", names[i],   "_T.tif"), overwrite=TRUE)
 }
 
+gc()
+
 projection(mh_present_umbral)
-plot(mh_future_umbral)
+
+plot(mh_future_umbral[[5]])
 
 mh_present_umbral <- projectRaster(mh_present_umbral, crs = reference_system)
 
