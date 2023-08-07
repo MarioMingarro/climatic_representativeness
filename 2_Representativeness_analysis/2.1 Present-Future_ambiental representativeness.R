@@ -5,9 +5,11 @@ library(RStoolbox)
 library(stringr)
 library(corrplot)
 library(caret)
-
+library(tictoc)
 gc(reset = T)
 
+
+tic()
 # Load data ----
 # Climatic representativeness -----
 present_climatic_variables <- raster::stack(list.files("D:/REPRESENATTIVENESS/CLIMA/PRESENT", "\\.tif$", full.names = T))
@@ -24,7 +26,8 @@ names(future_climatic_variables) <- c("CHELSA_bio1","CHELSA_bio10","CHELSA_bio11
 
 study_area <- read_sf("D:/REPRESENATTIVENESS/IP/IP.shp")
 
-polygon <- read_sf("D:/REPRESENATTIVENESS/ENP/RAMSAR/Selected_Ramsar.shp")
+polygon <- read_sf("D:/REPRESENATTIVENESS/LIC/LIC_IP_500_2.shp")
+
 
 
 # Reference system
@@ -46,6 +49,7 @@ if(compareCRS(polygon, present_climatic_variables) == TRUE) {
   print("Same Reference System")
 } else {
   polygon <- st_transform(polygon, crs(reference_system))
+  print(paste0("Reference System was modified to ", reference_system))
 }
 
 
@@ -75,7 +79,7 @@ colnames(data_future_climatic_variables) <- colnames(data_present_climatic_varia
 cor <- cor(data_present_climatic_variables[,3:21])
 
 #Select variables less correlated 
-drop_1  <-  findCorrelation(cor, cutoff = .8)
+drop_1  <-  findCorrelation(cor, cutoff = .6)
 drop  <-  names(data_present_climatic_variables[,3:21])[drop_1]
 data_present_climatic_variables <- data_present_climatic_variables[!names(data_present_climatic_variables) %in% drop]
 data_future_climatic_variables <- data_future_climatic_variables[!names(data_future_climatic_variables) %in% drop]
@@ -91,6 +95,8 @@ corrplot(cor(data_present_climatic_variables[3:length(data_present_climatic_vari
 corrplot(cor(data_future_climatic_variables[3:length(data_present_climatic_variables)]),
          method = "number",
          type = "upper")
+
+
 
 # Add field period 
 data_present_climatic_variables <- mutate(data_present_climatic_variables, Period = c("Present"),  .after = "y")
@@ -152,8 +158,6 @@ for(j in 4:length(mh)){
   mh_future <- raster::stack(mh_future, mh_f)
 }
 
-plot(mh_future)
-plot(mh_present)
 
 # Export raster
 
@@ -161,8 +165,6 @@ plot(mh_present)
 #  writeRaster(mh_present[[i]], paste0("T:/MODCLIM_R_DATA/ANALISIS/RESULTADOS/Slovenia/mh_present_IPSL_2040_2070_SSP85", names[i], ".tif"), overwrite=TRUE)
 #  writeRaster( mh_future[[i]], paste0("T:/MODCLIM_R_DATA/ANALISIS/RESULTADOS/Slovenia/mh_future_IPSL_2040_2070_SSP85", names[i],   ".tif"), overwrite=TRUE)
 #}
-
-
 
 
 # Threshold selection
@@ -178,56 +180,83 @@ for (i in 1:nlayers(mh_present)){
   mh_future_bin <- reclassify(mh_future[[i]], c(mh_polygon,Inf,NA))
   mh_future_umbral <- raster::stack(mh_future_umbral, mh_future_bin)
 }
-plot(mh_present_umbral)
+
 
 # Export raster
-for ( i in 1:nlayers(mh_present_umbral)){
-  writeRaster(mh_present_umbral[[i]],  paste0("D:/REPRESENATTIVENESS/RAMSAR_RESULTS/mh_present_IPSL_2040_2070_SSP85", names[i], "_T.tif"), overwrite=TRUE)
-  writeRaster( mh_future_umbral[[i]],  paste0("D:/REPRESENATTIVENESS/RAMSAR_RESULTS/mh_future_IPSL_2040_2070_SSP85", names[i],   "_T.tif"), overwrite=TRUE)
-}
+#for ( i in 1:nlayers(mh_present_umbral)){
+#  writeRaster(mh_present_umbral[[i]],  paste0("D:/REPRESENATTIVENESS/RAMSAR_RESULTS/mh_present_IPSL_2040_2070_SSP85", names[i], "_T.tif"), overwrite=TRUE)
+#  writeRaster( mh_future_umbral[[i]],  paste0("D:/REPRESENATTIVENESS/RAMSAR_RESULTS/mh_future_IPSL_2040_2070_SSP85", names[i],   "_T.tif"), overwrite=TRUE)
+#}
+
+################################
+##CLEAR
+##############################
+
+
+rm(list= ls()[!(ls() %in% c("mh_present_umbral", "mh_future_umbral", "polygon", "study_area", "cor", "drop", "drop_1"))])
+rm(cor)
+rm(drop)
+rm(drop_1)
+
+gc(reset=TRUE)
 
 ######################
 
 reference_system <- projection("+init=epsg:25828") # "+proj=longlat +datum=WGS84 +no_defs"   
 
-
-mh_present_umbral_2 <- projectRaster(mh_present_umbral, crs = reference_system)
-mh_future_umbral_2 <- projectRaster(mh_future_umbral, crs = reference_system)
+projection(mh_present_umbral) = CRS("+proj=longlat +datum=WGS84 +no_defs")
+projection(mh_future_umbral) = CRS("+proj=longlat +datum=WGS84 +no_defs")
+mh_present_umbral <- projectRaster(mh_present_umbral, crs = reference_system)
+mh_future_umbral <- projectRaster(mh_future_umbral, crs = reference_system)
 study_area <- st_transform(study_area, crs(reference_system))
 polygon <- st_transform(polygon, crs(reference_system))
 
 isolation <- data.frame(name=character(), 
                         present_dist=numeric(), 
+                        future_present_dist=numeric(), 
                         future_dist=numeric())
 
 
 
 for (i in 1:nlayers(mh_present_umbral)){
   aa <- data.frame(name="a", 
-                   present_dist=2, 
-                   future_dist=3)
+                   present_dist=2,
+                   future_present_dist=2,
+                   future_dist=2)
   pol <- polygon[i,]
-  pre_in <- raster::mask(mh_present_umbral, pol)
+  pre_in <- raster::mask(mh_present_umbral[[i]], pol)
   n_pre_in <- length(na.omit(pre_in@data@values))
-  pre_out <- raster::mask(mh_present_umbral, pol, inverse = T)
-  fut_out <- raster::mask(mh_future_umbral, pol, inverse = T)
-  pre_out <- rasterToPoints(pre_out)
-  fut_out <- rasterToPoints(fut_out)
+  pre_out <- raster::mask(mh_present_umbral[[i]], pol, inverse = T)
+  fut_out <- raster::mask(mh_future_umbral[[i]], pol, inverse = T)
+  pre_out <- rasterToPoints(pre_out, spatial = T)
+  fut_out <- rasterToPoints(fut_out, spatial = T)
   
-  polygon <- as(polygon, 'Spatial')
-  pre_out <- SpatialPoints(pre_out[,1:2])
-  fut_out <- SpatialPoints(fut_out[,1:2])
-  
+  pol <- as(pol, 'Spatial')
   distance_pre <- sort(rgeos::gDistance(pre_out, pol, byid=TRUE))
   distance_fut <- sort(rgeos::gDistance(fut_out, pol, byid=TRUE))
   
-  
   aa$name <- pol$NAME
   aa$present_dist <-  mean(distance_pre[1:n_pre_in])
-  aa$future_dist <-  mean(distance_fut[1:n_pre_in])
+  aa$future_present_dist <-  mean(distance_fut[1:n_pre_in])
+  aa$future_dist <-  mean(distance_fut)
   isolation <- rbind(isolation, aa)
 }
 
+toc()
+####################################################################################
+
+writexl::write_xlsx(isolation, "D:/REPRESENATTIVENESS/isolation.xlsx")
+
+mean(distance_fut)
+
+proj4string(pol)
+projection(pre_out)
+i=3
+plot(mh_present_umbral[[1]])
+plot(mh_future_umbral[[1]])
+
+#pre_out <- SpatialPoints(pre_out[,1:2])
+#fut_out <- SpatialPoints(fut_out[,1:2])
 #############################################################################################
 ############################################################################################
 
