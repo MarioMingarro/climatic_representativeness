@@ -10,12 +10,12 @@ gc(reset = T)
 
 
 tic()
-# Load data ----
-# Climatic representativeness -----
-present_climatic_variables <- raster::stack(list.files("D:/REPRESENATTIVENESS/CLIMA/PRESENT", "\\.tif$", full.names = T))
+# CLIMATE ----
+## Load data ----
+## Climatic representativeness -----
+present_climatic_variables <- raster::stack(list.files("D:/MODCLIM/CLIMA/PRESENTE/", "\\.tif$", full.names = T))
 
-# Climatic representativeness -----
-future_climatic_variables <- raster::stack(list.files("D:/REPRESENATTIVENESS/CLIMA/FUTURO/GFDL/SSP585", "\\.tif$", full.names = T))
+future_climatic_variables <- raster::stack(list.files("D:/MODCLIM/CLIMA/FUTURO/IPSL/", "\\.tif$", full.names = T))
 
 names(present_climatic_variables) <- c("CHELSA_bio1","CHELSA_bio10","CHELSA_bio11","CHELSA_bio12","CHELSA_bio13","CHELSA_bio14",
                                        "CHELSA_bio15","CHELSA_bio16","CHELSA_bio17","CHELSA_bio18","CHELSA_bio19","CHELSA_bio2",
@@ -24,9 +24,9 @@ names(future_climatic_variables) <- c("CHELSA_bio1","CHELSA_bio10","CHELSA_bio11
                                        "CHELSA_bio15","CHELSA_bio16","CHELSA_bio17","CHELSA_bio18","CHELSA_bio19","CHELSA_bio2",
                                       "CHELSA_bio3","CHELSA_bio4","CHELSA_bio5","CHELSA_bio6","CHELSA_bio7","CHELSA_bio8","CHELSA_bio9")
 
-study_area <- read_sf("D:/REPRESENATTIVENESS/IP/IP.shp")
+study_area <- read_sf("D:/MODCLIM/macaronesia.shp")
 
-polygon <- read_sf("D:/REPRESENATTIVENESS/LIC/LIC_IP_500_2.shp")
+polygon <- read_sf("D:/MODCLIM/AP/madeira.shp")
 
 
 
@@ -74,11 +74,11 @@ colnames(data_present_climatic_variables) <- c("x","y","CHELSA_bio1","CHELSA_bio
 colnames(data_future_climatic_variables) <- colnames(data_present_climatic_variables)
 
 
-###################################################
+
 # Correlation between variables ----
 cor <- cor(data_present_climatic_variables[,3:21])
 
-#Select variables less correlated 
+# Select variables less correlated 
 drop_1  <-  findCorrelation(cor, cutoff = .6)
 drop  <-  names(data_present_climatic_variables[,3:21])[drop_1]
 data_present_climatic_variables <- data_present_climatic_variables[!names(data_present_climatic_variables) %in% drop]
@@ -109,7 +109,7 @@ data <- rbind(data_present_climatic_variables, data_future_climatic_variables)
 
 
 # Create name object
-names <- polygon$ORIG_NAME
+names <- polygon$WDPAID
 
 
 # Mahalanobis distance ----
@@ -158,14 +158,18 @@ for(j in 4:length(mh)){
   mh_future <- raster::stack(mh_future, mh_f)
 }
 
-
+plot(mh_future)
 # Export raster
 
 #for ( i in 1:nlayers(mh_present)){
-#  writeRaster(mh_present[[i]], paste0("T:/MODCLIM_R_DATA/ANALISIS/RESULTADOS/Slovenia/mh_present_IPSL_2040_2070_SSP85", names[i], ".tif"), overwrite=TRUE)
-#  writeRaster( mh_future[[i]], paste0("T:/MODCLIM_R_DATA/ANALISIS/RESULTADOS/Slovenia/mh_future_IPSL_2040_2070_SSP85", names[i],   ".tif"), overwrite=TRUE)
+writeRaster(mh_present[[i]], paste0("T:/MODCLIM_R_DATA/ANALISIS/RESULTADOS/Slovenia/mh_present_IPSL_2040_2070_SSP85", names[i], ".tif"), overwrite=TRUE)
+writeRaster( mh_future[[i]], paste0("T:/MODCLIM_R_DATA/ANALISIS/RESULTADOS/Slovenia/mh_future_IPSL_2040_2070_SSP85", names[i],   ".tif"), overwrite=TRUE)
 #}
+writeRaster(mh_present_umbral[[1]], "D:/MODCLIM/RESULT/mh_pre_madeira_umbral.tif")
+writeRaster( mh_future_umbral[[1]], "D:/MODCLIM/RESULT/mh_fut_madeira_umbral.tif")
 
+writeRaster(mh_present[[1]], "D:/MODCLIM/RESULT/mh_pre_madeira.tif")
+writeRaster( mh_future[[1]], "D:/MODCLIM/RESULT/mh_fut_madeira.tif")
 
 # Threshold selection
 mh_present_umbral <- raster::brick()
@@ -188,9 +192,7 @@ for (i in 1:nlayers(mh_present)){
 #  writeRaster( mh_future_umbral[[i]],  paste0("D:/REPRESENATTIVENESS/RAMSAR_RESULTS/mh_future_IPSL_2040_2070_SSP85", names[i],   "_T.tif"), overwrite=TRUE)
 #}
 
-################################
-##CLEAR
-##############################
+
 
 
 rm(list= ls()[!(ls() %in% c("mh_present_umbral", "mh_future_umbral", "polygon", "study_area", "cor", "drop", "drop_1"))])
@@ -200,7 +202,6 @@ rm(drop_1)
 
 gc(reset=TRUE)
 
-######################
 
 reference_system <- projection("+init=epsg:25828") # "+proj=longlat +datum=WGS84 +no_defs"   
 
@@ -243,7 +244,7 @@ for (i in 1:nlayers(mh_present_umbral)){
 }
 
 toc()
-####################################################################################
+
 
 writexl::write_xlsx(isolation, "D:/REPRESENATTIVENESS/isolation.xlsx")
 
@@ -257,31 +258,23 @@ plot(mh_future_umbral[[1]])
 
 #pre_out <- SpatialPoints(pre_out[,1:2])
 #fut_out <- SpatialPoints(fut_out[,1:2])
-#############################################################################################
-############################################################################################
 
-############################### GEOTOPOGRAPHIC ############################################
 
-###########################################################################################
-############################################################################################
+#GEODIVERSE---- 
 
-dem <- raster("T:/MODCLIM_R_DATA/ANALISIS/SLOVENIA/DEM_triglav.tif")
-dem_future <- raster("T:/MODCLIM_R_DATA/ANALISIS/SLOVENIA/DEM_future.tif")
-dem <- raster::aggregate(dem, 8)
-dem_future <- raster::aggregate(dem_future, 8)
+geomorphologic_variables <-  raster::stack(list.files("D:/MODCLIM/GEODIVERSIDAD/Macaronesia/reclass/", ".tif", full.names = T))
+geomorphologic_variables <- projectRaster(geomorphologic_variables, crs = reference_system)
+plot(geomorphologic_variables)
 
-geo <- terrain(dem, opt=c("slope", "aspect", "TPI", "TRI", "roughness"), unit='degrees')
-geo_future <- terrain(dem_future, opt=c("slope", "aspect", "TPI", "TRI", "roughness"), unit='degrees')
-plot(geo_future)
-writeRaster(geo, "T:/MODCLIM_R_DATA/ANALISIS/SLOVENIA/geo.tif",overwrite=TRUE)
-writeRaster(geo_future, "T:/MODCLIM_R_DATA/ANALISIS/SLOVENIA/geo_future.tif",overwrite=TRUE)
+
+geomorphologic_variables <- raster::aggregate(geomorphologic_variables, 4)
+
+
 # Extract raster data
-data_geo <- raster::as.data.frame(geo, xy = TRUE)
-data_geo_future <- raster::as.data.frame(geo_future, xy = TRUE)
+data_geo <- raster::as.data.frame(geomorphologic_variables, xy = TRUE)
 
 # Delete NA
 data_geo<-na.omit(data_geo)
-data_geo_future <-na.omit(data_geo_future)
 
 
 ###################################################
@@ -292,26 +285,21 @@ cor <- cor(data_geo[,3:7])
 drop_1  <-  findCorrelation(cor, cutoff = .8)
 drop  <-  names(data_geo[,3:7])[drop_1]
 data_geo <- data_geo[!names(data_geo) %in% drop]
-data_geo_future <- data_geo_future[!names(data_geo_future) %in% drop]
 
+geo <- dropLayer(geomorphologic_variables, names(geomorphologic_variables)[drop_1])
 
-geo <- dropLayer(geo, names(geo)[drop_1])
-geo_future <- dropLayer(geo_future, names(geo)[drop_1])
 
 
 corrplot(cor(data_geo[4:length(data_geo)]),
-         method = "number",
-         type = "upper")
-corrplot(cor(data_geo_future[3:length(data_geo_future)]),
          method = "number",
          type = "upper")
 
 
 # Add field period 
 data_geo <- mutate(data_geo, Period = c("PN"),  .after = "y")
-data_geo_future  <- mutate(data_geo_future, Period = c("OUT"),  .after = "y")
 
-data <- rbind(data_geo, data_geo_future)
+
+
 
 
 mh <- mahalanobis(data[,4:length(data)], 
