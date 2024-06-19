@@ -24,10 +24,9 @@ names(future_climatic_variables) <- c("CHELSA_bio1","CHELSA_bio10","CHELSA_bio11
                                        "CHELSA_bio15","CHELSA_bio16","CHELSA_bio17","CHELSA_bio18","CHELSA_bio19","CHELSA_bio2",
                                       "CHELSA_bio3","CHELSA_bio4","CHELSA_bio5","CHELSA_bio6","CHELSA_bio7","CHELSA_bio8","CHELSA_bio9")
 
-study_area <- read_sf("D:/MODCLIM/macaronesia.shp")
+study_area <- read_sf("D:/MODCLIM/CHILE/CHILE.shp")
 
-polygon <- read_sf("D:/MODCLIM/AP/madeira.shp")
-
+polygon <- read_sf("D:/MODCLIM/CHILE/PN_Vicente_Perez.shp")
 
 
 # Reference system
@@ -105,8 +104,9 @@ data_future_climatic_variables  <- mutate(data_future_climatic_variables, Period
 # Join two dataset
 colnames(data_future_climatic_variables) <- colnames(data_present_climatic_variables)
 data <- rbind(data_present_climatic_variables, data_future_climatic_variables)
+data <- data_present_climatic_variables
 
-
+xxxxxxxx
 
 # Create name object
 names <- polygon$WDPAID
@@ -149,6 +149,8 @@ for(j in 4:length(mh)){
   mh_present <- raster::stack(mh_present, mh_f)
 }
 
+
+
 mh_future <- raster::brick()
 
 for(j in 4:length(mh)){
@@ -168,8 +170,10 @@ writeRaster( mh_future[[i]], paste0("T:/MODCLIM_R_DATA/ANALISIS/RESULTADOS/Slove
 writeRaster(mh_present_umbral[[1]], "D:/MODCLIM/RESULT/mh_pre_madeira_umbral.tif")
 writeRaster( mh_future_umbral[[1]], "D:/MODCLIM/RESULT/mh_fut_madeira_umbral.tif")
 
-writeRaster(mh_present[[1]], "D:/MODCLIM/RESULT/mh_pre_madeira.tif")
-writeRaster( mh_future[[1]], "D:/MODCLIM/RESULT/mh_fut_madeira.tif")
+writeRaster(mh_present_umbral[[1]], "D:/MODCLIM/CHILE/PN_P_UMB.tif")
+writeRaster(mh_future_umbral[[1]], "D:/MODCLIM/CHILE/PN_F_UMB.tif")
+writeRaster(mh_present[[1]], "D:/MODCLIM/CHILE/PN_P.tif")
+writeRaster(mh_future[[1]], "D:/MODCLIM/CHILE/PN_F.tif")
 
 # Threshold selection
 mh_present_umbral <- raster::brick()

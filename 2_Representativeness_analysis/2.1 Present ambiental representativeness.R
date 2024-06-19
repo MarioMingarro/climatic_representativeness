@@ -7,9 +7,9 @@ library(stringr)
 # Load data
 study_area <- read_sf(list.files("T:/MODCLIM_R_DATA/analysis/", "\\.shp$", full.names = T))
 
-study_area <- read_sf("D:/MODCLIM/macaronesia.shp")
+study_area <- read_sf("D:/MODCLIM/CHILE/CHILE.shp")
 
-polygon <- read_sf("D:/MODCLIM/AP/tamadaba.shp")
+polygon <- read_sf("D:/MODCLIM/CHILE/PN_Vicente_Perez.shp")
 
 # Reference system
 reference_system <- "+init=epsg:4326"
