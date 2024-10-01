@@ -58,6 +58,17 @@ ggplot(bb, aes(x = Distancia, y= MH, color = agg)) +
   geom_point() + 
   scale_color_gradient(low = "blue", high = "red")
 
+ggplot() +
+  # Mostrar los datos de 'puntos_todos' con escala de colores continua
+  geom_sf(data = puntos_todos, aes(geometry = geometry, color = agg), size = 1) + 
+  # Añadir la escala de colores
+  scale_color_gradient(low = "blue", high = "red") +  # Puedes ajustar estos colores
+  # Título y ajustes de visualización
+  labs(title = "aaa", 
+       subtitle = "Visualización de datos sf sobre mapa",
+       color = "Valor de Agg") +  # Etiqueta para la leyenda de color
+  theme_minimal() +
+  coord_sf()  # Coordenadas geográficas
 #######################################################################################
 # Instalar los paquetes necesarios si no los tienes
 install.packages(c("sf", "spdep", "terra", "ggplot2", "stars", "tidyverse"))
@@ -350,7 +361,7 @@ aa <- filter(puntos_sp, puntos_sp$cluster == 1 & puntos_sp$MH <= max(dentro$MH))
 ggplot() +
   
   # Mostrar los datos de 'aa' (polígonos o puntos)
-  geom_sf(data = puntos_todos, aes(geometry = geometry), color = puntos_todos$agg, size = 1) +
+  geom_sf(data = aa, aes(geometry = geometry), color = "blue", fill = NA, size = 1) +
   # Título y ajustes de visualización
   labs(title = "aaa", 
        subtitle = "Visualización de datos sf sobre mapa") +
