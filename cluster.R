@@ -9,6 +9,8 @@ library(RColorBrewer)
 library(terra)
 library(sf)
 library(tidyverse)
+library(spdep)
+library(tictoc)
 
 # Cargar el archivo raster usando terra
 mh_raster <- terra::rast("C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/mh_guadarrama.tif")
@@ -28,6 +30,8 @@ puntos_todos <- sf::st_as_sf(puntos_todos)
 # 5. Encontrar los puntos que están dentro del área protegida usando st_intersection
 puntos_dentro <- sf::st_intersection(puntos_todos, area_protegida)
 
+# Distancia euclidea----
+
 # 6. Calcular la distancia mínima desde cada punto del raster a los puntos dentro del polígono
 # Convertir los puntos del polígono a 'sf' si es necesario
 distancias_minimas <- sf::st_distance(puntos_todos, puntos_dentro)
@@ -41,26 +45,39 @@ puntos_todos$distancia_minima <- distancias_minimas
 # 8. Convertir las distancias a kilómetros y redondear
 puntos_todos$distancia_minima <- round(puntos_todos$distancia_minima / 1000, 0)
 
-# 9. Crear un dataframe con la distancia mínima y el valor de elevación (MH)
-bb <- data.frame(
-  Distancia = puntos_todos$distancia_minima,
-  MH = puntos_todos$mh_guadarrama,
-  agg = puntos_todos$agg
-)
+
+# Moran Local ----
+# 2. Crear la matriz de pesos espaciales
+coords <- st_coordinates(puntos_todos)
+nb <- dnearneigh(coords, 0, 1000)
+lw <- nb2listw(nb, style = "B", zero.policy = TRUE)
+
+# Calcular el índice local de Getis-Ord G usando la variable mh_guadarrama
+tic()
+G30 <- localG(puntos_todos$mh_guadarrama, lw)
+toc()
+SAlocalI <- as.data.frame(attr(G30, "internals"))
+puntos_todos$SA <- SAlocalI$Gi
+puntos_todos$SA_sig <- SAlocalI$`Pr(z != E(Gi))`
+
+# Hotspots ----
+hotspots <- hotspot(G30, Prname = "Pr(z != E(Gi))", cutoff = 0.05)  # Hotspots con corte de 0.05
+
+puntos_todos$hotspot <- hotspots 
+
+puntos_todos$hotspot_binary <- ifelse(puntos_todos$hotspot == "High", 1, 0)
+
+# Ponderar ----
+resultado <- (1/(puntos_todos$mh_guadarrama*0.6))+(puntos_todos$distancia_minima*0.2) +
+  (puntos_todos$hotspot_binary *0.2)
+
+puntos_todos$RES <- resultado
 
 
-resultado <- (puntos_todos$mh_guadarrama*0.7) +
-  (puntos_todos$distancia_minima*0.3)
-
-puntos_todos$agg <- resultado
-
-ggplot(bb, aes(x = Distancia, y= MH, color = agg)) + 
-  geom_point() + 
-  scale_color_gradient(low = "blue", high = "red")
 
 ggplot() +
   # Mostrar los datos de 'puntos_todos' con escala de colores continua
-  geom_sf(data = puntos_todos, aes(geometry = geometry, color = agg), size = 1) + 
+  geom_sf(data = puntos_todos, aes(geometry = geometry, color = puntos_todos$RES), size = 1) + 
   # Añadir la escala de colores
   scale_color_gradient(low = "blue", high = "red") +  # Puedes ajustar estos colores
   # Título y ajustes de visualización
@@ -68,7 +85,61 @@ ggplot() +
        subtitle = "Visualización de datos sf sobre mapa",
        color = "Valor de Agg") +  # Etiqueta para la leyenda de color
   theme_minimal() +
-  coord_sf()  # Coordenadas geográficas
+  coord_sf()  
+
+
+st_write(puntos_todos, "C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/resultados2.shp")
+
+#################################################################################
+
+bb <- data.frame(
+  Distancia = puntos_todos$distancia_minima,
+  MH = puntos_todos$mh_guadarrama,
+  SA = puntos_todos$SAlocalI)
+
+ggplot(bb, aes(x = Distancia, y= MH, color = agg)) + 
+  geom_point() + 
+  scale_color_gradient(low = "blue", high = "red")
+#crear raster----
+# 5. Crear un raster de 1000 metros de resolución
+# Definir la resolución deseada (1000 metros)
+resolution <- 1000
+# Definir el bounding box del área de estudio
+bbox <- st_bbox(puntos)
+# Crear un raster vacío con la resolución y bounding box adecuado usando 'terra'
+raster_template <- rast(ext(bbox), resolution, resolution)
+# 6. Rasterizar los puntos usando los valores del índice de Moran Local
+# Convertimos el objeto sf a SpatVector para usar con terra
+puntos_vect <- vect(puntos)
+# Rasterizar el índice de Moran Local sobre el raster template
+raster_localI <- rasterize(puntos_vect, raster_template, field = "localI")
+# 7. Convertir el raster a un data frame para ggplot
+raster_df <- as.data.frame(raster_localI, xy = TRUE, na.rm = TRUE)
+# Cambiamos el nombre de la columna con los valores de 'localI'
+colnames(raster_df)[3] <- "localI"  # La tercera columna es donde están los valores
+# 8. Graficar los resultados con ggplot2
+ggplot() +
+geom_raster(data = raster_df, aes(x = x, y = y, fill = localI)) +
+scale_fill_viridis_c() +  # Escala de color continua
+theme_minimal() +
+labs(title = "Índice de Moran Bivariado Local",
+x = "Coordenada X", y = "Coordenada Y",
+fill = "Índice de Moran Local") +
+coord_equal()
+
+
+
+head(puntos_todos$hotspot)
+
+# 9. Crear un dataframe con la distancia mínima y el valor de elevación (MH)
+bb <- data.frame(
+  Distancia = puntos_todos$distancia_minima,
+  MH = puntos_todos$mh_guadarrama,
+  SA = puntos_todos$hotspot_binary)
+
+
+
+# Coordenadas geográficas
 #######################################################################################
 # Instalar los paquetes necesarios si no los tienes
 install.packages(c("sf", "spdep", "terra", "ggplot2", "stars", "tidyverse"))
