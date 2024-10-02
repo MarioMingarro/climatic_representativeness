@@ -1,58 +1,197 @@
-library(raster)   # Para manejar archivos raster
-library(sf)       # Para manejar shapefiles
-library(gstat)    # Para generar el variograma
-library(sp)       # Para trabajar con objetos espaciales
-library(RColorBrewer)
-
-
-# 1. Cargar el archivo raster de elevación con terra
 library(terra)
 library(sf)
 library(tidyverse)
 library(spdep)
 library(tictoc)
 
-# Cargar el archivo raster usando terra
+# Cargar archivos
 mh_raster <- terra::rast("C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/mh_guadarrama.tif")
-
-# 2. Cargar el shapefile del área protegida (usando sf)
 area_protegida <- sf::st_read("C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/guadarrama_PN.shp")
 
-# 3. Convertimos el shapefile a la misma proyección que el raster (si es necesario)
+# Convertimos el shapefile a la misma proyección que el raster
 area_protegida <- sf::st_transform(area_protegida, crs = terra::crs(mh_raster))
 
-# 4. Extraer los puntos del raster usando terra
+# Extraer los puntos del raster usando terra
 puntos_todos <- terra::as.points(mh_raster)
 
 # Convertir los puntos del raster a un objeto 'sf'
 puntos_todos <- sf::st_as_sf(puntos_todos)
 
-# 5. Encontrar los puntos que están dentro del área protegida usando st_intersection
+# Encontrar los puntos que están dentro del área protegida usando st_intersection
 puntos_dentro <- sf::st_intersection(puntos_todos, area_protegida)
 
-# Distancia euclidea----
 
-# 6. Calcular la distancia mínima desde cada punto del raster a los puntos dentro del polígono
-# Convertir los puntos del polígono a 'sf' si es necesario
+# Distancia euclidea ----
+# Calcular la distancia mínima desde cada punto del raster a los puntos dentro del polígono
 distancias_minimas <- sf::st_distance(puntos_todos, puntos_dentro)
 
 # Para obtener la distancia mínima por cada punto, tomamos el valor mínimo de cada fila
 distancias_minimas <- apply(distancias_minimas, 1, min)
 
-# 7. Agregar las distancias mínimas como un atributo a los puntos del raster
+# Agregar las distancias mínimas como un atributo a los puntos del raster
 puntos_todos$distancia_minima <- distancias_minimas
 
-# 8. Convertir las distancias a kilómetros y redondear
+# Convertir las distancias a kilómetros y redondear
 puntos_todos$distancia_minima <- round(puntos_todos$distancia_minima / 1000, 0)
+puntos_todos$distancia_minima[puntos_todos$distancia_minima == 0] <- NA
 
 
-# Moran Local ----
-# 2. Crear la matriz de pesos espaciales
+# Autocorrelacion Local ----
+# Crear la matriz de pesos espaciales
 coords <- st_coordinates(puntos_todos)
+puntos_todos <- cbind(puntos_todos, coords)
 nb <- dnearneigh(coords, 0, 1000)
-lw <- nb2listw(nb, style = "B", zero.policy = TRUE)
+lw <- nb2listw(nb, style = "W", zero.policy = TRUE)
 
-# Calcular el índice local de Getis-Ord G usando la variable mh_guadarrama
+## Moran ----
+tic()
+G30 <- localmoran(puntos_todos$mh_guadarrama, lw)
+toc()
+G30_df <- as.data.frame(G30)
+puntos_todos$SA <- G30_df$Ii  # Índice local de Moran (Ii)
+puntos_todos$SA_sig <- G30_df$`Pr(z != E(Ii))` # P-valor del índice local de Moran
+
+# Crear la variable de lag espacial de mh_guadarrama_z usando pesos espaciales
+#puntos_todos$mh_guadarrama_lag <- lag.listw(lw, puntos_todos$mh_guadarrama)
+
+# Agrupar en categorías "High-High", "Low-Low", etc. usando el valor estandarizado y la autocorrelación local (SA)
+puntos_todos$lisa_cluster <- case_when(
+  puntos_todos$SA_sig >= 0.05 ~ NA,  # No significativo si p > 0.05
+  puntos_todos$mh_guadarrama <= max(puntos_dentro$mh_guadarrama) & puntos_todos$SA > 0 ~ 1,  # Alto valor y autocorrelación alta
+  puntos_todos$mh_guadarrama > 0 & puntos_todos$SA < 0 ~ NA,   # Alto valor y autocorrelación baja
+  puntos_todos$mh_guadarrama < 0 & puntos_todos$SA > 0 ~ NA,    # Bajo valor y autocorrelación alta
+  puntos_todos$mh_guadarrama < 0 & puntos_todos$SA < 0 ~ NA    # Bajo valor y autocorrelación baja
+)
+
+
+# Ponderar ----
+resultado <- (1/(puntos_todos$mh_guadarrama*0.6))+(puntos_todos$distancia_minima*0.2) +
+  (puntos_todos$lisa_cluster *0.2)
+
+puntos_todos$RES <- resultado
+
+
+# Crear raster----
+resolution <- 1000
+bbox <- st_bbox(puntos_todos)
+raster_template <- rast(ext(bbox), nrows = 869, ncols = 1083)
+puntos_vect <- vect(puntos_todos)
+raster <- terra::rasterize(puntos_vect, raster_template, field = "RES")
+crs(raster) <- "EPSG:25830"
+
+
+# Parches ----
+parches <- patches(raster, directions = 8, zeroAsNA=T)
+crs(parches) <- crs(raster)
+#ii <- terra::as.points(parches)
+#ii <- sf::st_as_sf(ii)
+
+pp <- terra::extract(parches, puntos_todos)
+pp <- cbind(puntos_todos, ii)
+
+# Calculos----
+
+df_resultados <- pp %>%
+  group_by(patches) %>%  # Agrupamos por el ID del parche
+  summarize(
+    area_total = n(),         # Sumamos el área total de cada grupo
+    res_promedio = mean(RES, na.rm = TRUE)  # Calculamos el valor promedio del raster en cada grupo
+  )%>%
+  mutate(FIN = 1/(area_total / res_promedio))
+
+resolution <- 1000
+bbox <- st_bbox(puntos_todos)
+raster_template <- rast(ext(bbox), nrows = 869, ncols = 1083)
+puntos_vect <- vect(df_resultados)
+raster <- terra::rasterize(puntos_vect, raster_template, field = "FIN")
+crs(raster) <- "EPSG:25830"
+fin <- terra::extract(raster, puntos_todos)
+plot(raster)
+
+pp <- left_join(as.data.frame(pp), as.data.frame(df_resultados))
+
+###############################
+
+aa <- puntos_todos
+
+bb <- as.data.frame(parches, xy = TRUE, na.rm = TRUE)
+bb$x <- round(bb$x , 0)
+bb$y <- round(bb$y , 0)
+
+cc <- left_join(df_raster, df_resultados, by = c("patches" = "patches"))
+
+
+bb <- st_join(aa, kk, by = c("X" = "x", "Y" = "y"))
+
+##################
+
+
+
+
+
+head(puntos_todos)
+# Calcular el área de cada celda
+areas_celdas <- cellSize(kkvk, unit = "m")
+plot(areas_celdas)
+# Convertir el raster de parches y el raster original en data frame para manipular con dplyr
+df_raster <- as.data.frame(c(kkvk, raster), xy = TRUE, na.rm = TRUE)
+# Agregar el área a df_raster utilizando el valor de las celdas de kkvk
+df_raster$area <- areas_celdas[kkvk[]]
+
+# Agregar el valor del raster original al data frame
+df_raster$raster_value <- rast_t[kkvk[]]
+
+
+
+colnames(puntos_todos) <- c("x", "y","patches","mh","area" , "kk")
+
+# Ahora, agrupamos por el ID de cada parche (kkvk) y calculamos el promedio del valor del raster y el área total
+df_resultados <- puntos_todos %>%
+  group_by(grupo) %>%  # Agrupamos por el ID del parche
+  summarize(
+    area_total = n(),         # Sumamos el área total de cada grupo
+    RES_medio = mean(RES, na.rm = TRUE)  # Calculamos el valor promedio del raster en cada grupo
+  )
+
+df_resultados$patches
+df_resultados %>%
+  mutate(FIN = valor_promedio / area_total)
+pp <- as.data.frame(pp)
+
+# Ahora puedes hacer el left_join
+df_resultados <- left_join(pp, df_resultados, by = "patches")
+
+# Ahora dividimos el valor promedio del raster entre el área total de cada grupo
+df_resultados <- left_join(pp, df_resultados, by = c("patches" = "patches"))
+
+
+
+# Ver los resultados
+print(df_resultados)
+
+# Exportar ----
+writeRaster(raster, "C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/pedo.tif")
+st_write(puntos_todos, "C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/resultados4.shp")
+ggplot() +
+  geom_sf(data = puntos_todos, aes(geometry = geometry, color = puntos_todos$RES ), size = 1) +
+  scale_color_gradient(low = "blue", high = "red") +
+  labs(title = "aaa", 
+       subtitle = "Visualización de datos sf sobre mapa",
+       color = "Valor de Agg") +  
+  theme_minimal() +
+  coord_sf()  
+
+ggplot(pp) +
+  geom_sf(aes(geometry = geometry, color = pp$patches)) +
+  theme_minimal() +
+  coord_sf()
+
+
+
+##################################################
+#################################################
+
+## Getis-Ord G ----
 tic()
 G30 <- localG(puntos_todos$mh_guadarrama, lw)
 toc()
@@ -60,35 +199,34 @@ SAlocalI <- as.data.frame(attr(G30, "internals"))
 puntos_todos$SA <- SAlocalI$Gi
 puntos_todos$SA_sig <- SAlocalI$`Pr(z != E(Gi))`
 
+
 # Hotspots ----
 hotspots <- hotspot(G30, Prname = "Pr(z != E(Gi))", cutoff = 0.05)  # Hotspots con corte de 0.05
-
-puntos_todos$hotspot <- hotspots 
-
+puntos_todos$hotspot <- as.character(hotspots) 
+levels(hotspots)
+unique(droplevels(hotspots))
 puntos_todos$hotspot_binary <- ifelse(puntos_todos$hotspot == "High", 1, 0)
 
-# Ponderar ----
-resultado <- (1/(puntos_todos$mh_guadarrama*0.6))+(puntos_todos$distancia_minima*0.2) +
-  (puntos_todos$hotspot_binary *0.2)
+# Crear variables estandarizadas de mh_guadarrama (z-scores)
+puntos_todos$mh_guadarrama_z <- as.numeric(scale(puntos_todos$mh_guadarrama))
 
-puntos_todos$RES <- resultado
+# Crear la variable de lag espacial de mh_guadarrama_z usando pesos espaciales
+puntos_todos$mh_guadarrama_zlag <- lag.listw(lw, puntos_todos$mh_guadarrama_z)
 
-
-
-ggplot() +
-  # Mostrar los datos de 'puntos_todos' con escala de colores continua
-  geom_sf(data = puntos_todos, aes(geometry = geometry, color = puntos_todos$RES), size = 1) + 
-  # Añadir la escala de colores
-  scale_color_gradient(low = "blue", high = "red") +  # Puedes ajustar estos colores
-  # Título y ajustes de visualización
-  labs(title = "aaa", 
-       subtitle = "Visualización de datos sf sobre mapa",
-       color = "Valor de Agg") +  # Etiqueta para la leyenda de color
-  theme_minimal() +
-  coord_sf()  
+# Agrupar en categorías "High-High", "Low-Low", etc. usando el valor estandarizado y la autocorrelación local (SA)
+puntos_todos$lisa_cluster <- case_when(
+  puntos_todos$SA_sig >= 0.05 ~ 0,  # No significativo si p > 0.05
+  puntos_todos$mh_guadarrama_z > 0 & puntos_todos$SA > 0 ~ 1,  # Alto valor y autocorrelación alta
+  puntos_todos$mh_guadarrama_z > 0 & puntos_todos$SA < 0 ~ 0,   # Alto valor y autocorrelación baja
+  puntos_todos$mh_guadarrama_z < 0 & puntos_todos$SA > 0 ~ 0,    # Bajo valor y autocorrelación alta
+  puntos_todos$mh_guadarrama_z < 0 & puntos_todos$SA < 0 ~ 0    # Bajo valor y autocorrelación baja
+)
+puntos_todos$lisa_cluster <- ifelse(puntos_todos$lisa_cluster  == "High-high", 1, 0)
 
 
-st_write(puntos_todos, "C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/resultados2.shp")
+
+
+
 
 #################################################################################
 
@@ -100,26 +238,16 @@ bb <- data.frame(
 ggplot(bb, aes(x = Distancia, y= MH, color = agg)) + 
   geom_point() + 
   scale_color_gradient(low = "blue", high = "red")
-#crear raster----
-# 5. Crear un raster de 1000 metros de resolución
-# Definir la resolución deseada (1000 metros)
-resolution <- 1000
-# Definir el bounding box del área de estudio
-bbox <- st_bbox(puntos)
-# Crear un raster vacío con la resolución y bounding box adecuado usando 'terra'
-raster_template <- rast(ext(bbox), resolution, resolution)
-# 6. Rasterizar los puntos usando los valores del índice de Moran Local
-# Convertimos el objeto sf a SpatVector para usar con terra
-puntos_vect <- vect(puntos)
-# Rasterizar el índice de Moran Local sobre el raster template
-raster_localI <- rasterize(puntos_vect, raster_template, field = "localI")
+
+
+
 # 7. Convertir el raster a un data frame para ggplot
 raster_df <- as.data.frame(raster_localI, xy = TRUE, na.rm = TRUE)
 # Cambiamos el nombre de la columna con los valores de 'localI'
-colnames(raster_df)[3] <- "localI"  # La tercera columna es donde están los valores
+colnames(raster_df)[3] <- "RES"  # La tercera columna es donde están los valores
 # 8. Graficar los resultados con ggplot2
 ggplot() +
-geom_raster(data = raster_df, aes(x = x, y = y, fill = localI)) +
+geom_raster(data = raster_df, aes(x = x, y = y, fill = RES)) +
 scale_fill_viridis_c() +  # Escala de color continua
 theme_minimal() +
 labs(title = "Índice de Moran Bivariado Local",
@@ -401,11 +529,12 @@ ggplot(elbow_data, aes(x = K, y = SEE)) +
 
 # Kmeans----
 bb <- data.frame(
-  SA = puntos$localI,
+  SA = puntos_todos,
   MH = puntos$mh_guadarrama
 )
 
-kk <- kmeans(x = bb, centers = 6, nstart = 50)
+kk <- kmeans(x = na.omit(puntos_todos$RES), centers = 6, nstart = 50)
+puntos
 bb <- bb %>% mutate(cluster = kk$cluster) %>% mutate(puntos)
 
 bb <- bb[,-c(4,7)]
