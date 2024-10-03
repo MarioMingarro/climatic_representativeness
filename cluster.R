@@ -71,6 +71,70 @@ resultado <- (1/(puntos_todos$mh_guadarrama*0.6))+(puntos_todos$distancia_minima
 puntos_todos$RES <- resultado
 
 
+puntos_todos <-  st_read("C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/puntos_todos.shp")
+colnames(puntos_todos) <- c("mh_guadarrama","distancia_minima","X","Y","inv_mh_","SA","SA_sig","geometry")
+# Crear una nueva columna con el inverso de mh_guadarrama
+puntos_todos$inv_mh_guadarrama <-   1 / puntos_todos$mh_guadarrama
+puntos_todos$lisa_cluster <- case_when(
+  puntos_todos$SA_sig >= 0.01 ~ NA,  # No significativo
+  puntos_todos$mh_guadarrama < max(puntos_dentro$mh_guadarrama) & puntos_todos$SA > 0 ~ 1,  # Punto alto rodeado de puntos altos
+  puntos_todos$mh_guadarrama < max(puntos_dentro$mh_guadarrama) & puntos_todos$SA < 0 ~ NA,    # Punto bajo rodeado de puntos bajos
+  puntos_todos$mh_guadarrama > max(puntos_dentro$mh_guadarrama) & puntos_todos$SA > 0 ~ NA,   # Punto alto rodeado de puntos bajos
+  puntos_todos$mh_guadarrama > max(puntos_dentro$mh_guadarrama) & puntos_todos$SA < 0 ~ NA)
+# Definir los colores para cada nivel del factor lisa_cluster
+colors <- c("1" = "red",     # Color para el nivel 1
+            "2" = "green",   # Color para el nivel 2
+            "3" = "blue",    # Color para el nivel 3
+            "4" = "yellow")  # Color para el nivel 4
+# Graficar
+ggplot() +
+  # Mostrar los datos de 'puntos_todos'
+  geom_sf(data = puntos_todos, aes(geometry = geometry, color = factor(lisa_cluster)), size = 1) +
+  # Título y ajustes de visualización
+  labs(title = "LISA",
+       subtitle = "p > 0.05") +
+  theme_minimal() +
+  coord_sf() +
+  # Aplicar los colores definidos
+  scale_color_manual(values = colors,
+                     name = "LISA Cluster",
+                     labels = c("1", "2", "3", "4")) +
+  theme(legend.position = "right")  # Ajustar la posición de la leyenda
+# Ponderar ----
+resultado <- (scale(puntos_todos$mh_guadarrama)*0.69)+(scale(puntos_todos$distancia_minima)*0.2) +
+  (puntos_todos$lisa_cluster *0.1)
+puntos_todos <- cbind(puntos_todos, ponderacion =resultado)
+resolution <- 1000
+bbox <- st_bbox(puntos_todos)
+raster_template <- rast(ext(bbox), nrows = 869, ncols = 1083)
+puntos_vect <- vect(puntos_todos)
+raster <- terra::rasterize(puntos_vect, raster_template, field = "ponderacion")
+crs(raster) <- "EPSG:25830"
+writeRaster(raster, "C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/raster_resultado.tif")
+writeRaster(raster, "C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/raster_resultado.tif", overwrite=TRUE)
+# Parches ----
+parches <- patches(raster, directions = 8, zeroAsNA=T)
+crs(parches) <- crs(raster)
+pp <- terra::extract(parches, puntos_todos)
+puntos_todos <- cbind(puntos_todos, pp)
+df_resultados <- pp %>%
+  df_resultados <- puntos_todos %>%
+  group_by(patches) %>%  # Agrupamos por el ID del parche
+  summarize(
+    area_total = n(),         # Sumamos el área total de cada grupo
+    ponderacion_promedio = mean(ponderacion, na.rm = TRUE)  # Calculamos el valor promedio del raster en cada grupo
+  )%>%
+  mutate(FIN = 1/(area_total / res_promedio))
+puntos_vect <- vect(df_resultados)
+raster <- terra::rasterize(puntos_vect, raster_template, field = "FIN")
+fin <- terra::extract(raster, puntos_todos)
+View(fin)
+df_resultados$ID <- as.numeric(rownames(df_resultados))
+df_resultados <- left_join(as.data.frame(df_resultados), as.data.frame(fin))
+puntos_todos <- left_join(as.data.frame(puntos_todos), as.data.frame(df_resultados), by = c("patches" = "patches"))
+
+write.csv2(puntos_todos, "C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/resultado.csv")
+
 # Crear raster----
 resolution <- 1000
 bbox <- st_bbox(puntos_todos)
