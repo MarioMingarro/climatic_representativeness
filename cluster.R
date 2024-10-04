@@ -4,8 +4,11 @@ library(tidyverse)
 library(spdep)
 library(tictoc)
 
+tic()
 # Cargar archivos
 mh_raster <- terra::rast("C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/mh_guadarrama.tif")
+mh_raster <- terra::rast("C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/mh_guadarrama_2050.tif")
+
 area_protegida <- sf::st_read("C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/guadarrama_PN.shp")
 
 # Convertimos el shapefile a la misma proyección que el raster
@@ -16,6 +19,7 @@ puntos_todos <- terra::as.points(mh_raster)
 
 # Convertir los puntos del raster a un objeto 'sf'
 puntos_todos <- sf::st_as_sf(puntos_todos)
+colnames(puntos_todos) <- c("mh", "geometry")  
 
 # Encontrar los puntos que están dentro del área protegida usando st_intersection
 puntos_dentro <- sf::st_intersection(puntos_todos, area_protegida)
@@ -23,18 +27,19 @@ puntos_dentro <- sf::st_intersection(puntos_todos, area_protegida)
 
 # Distancia euclidea ----
 # Calcular la distancia mínima desde cada punto del raster a los puntos dentro del polígono
-distancias_minimas <- sf::st_distance(puntos_todos, puntos_dentro)
+dist <- sf::st_distance(puntos_todos, puntos_dentro)
 
 # Para obtener la distancia mínima por cada punto, tomamos el valor mínimo de cada fila
-distancias_minimas <- apply(distancias_minimas, 1, min)
+dist <- apply(dist, 1, min)
 
 # Agregar las distancias mínimas como un atributo a los puntos del raster
-puntos_todos$distancia_minima <- distancias_minimas
+puntos_todos$dist <- dist
 
 # Convertir las distancias a kilómetros y redondear
-puntos_todos$distancia_minima <- round(puntos_todos$distancia_minima / 1000, 0)
-puntos_todos$distancia_minima[puntos_todos$distancia_minima == 0] <- NA
-
+puntos_todos$dist <- round(puntos_todos$dist / 1000, 0)
+puntos_todos$dist[puntos_todos$dist == 0] <- NA
+#Calcular invers mahalanobis
+puntos_todos$inv_mh <-  1 / puntos_todos$mh
 
 # Autocorrelacion Local ----
 # Crear la matriz de pesos espaciales
@@ -44,43 +49,72 @@ nb <- dnearneigh(coords, 0, 1000)
 lw <- nb2listw(nb, style = "W", zero.policy = TRUE)
 
 ## Moran ----
-tic()
-G30 <- localmoran(puntos_todos$mh_guadarrama, lw)
-toc()
+
+G30 <- localmoran(puntos_todos$inv_mh , lw)
+
 G30_df <- as.data.frame(G30)
 puntos_todos$SA <- G30_df$Ii  # Índice local de Moran (Ii)
 puntos_todos$SA_sig <- G30_df$`Pr(z != E(Ii))` # P-valor del índice local de Moran
 
-# Crear la variable de lag espacial de mh_guadarrama_z usando pesos espaciales
-#puntos_todos$mh_guadarrama_lag <- lag.listw(lw, puntos_todos$mh_guadarrama)
 
-# Agrupar en categorías "High-High", "Low-Low", etc. usando el valor estandarizado y la autocorrelación local (SA)
+# Crear una nueva columna con el inverso de mh_guadarrama
+
 puntos_todos$lisa_cluster <- case_when(
-  puntos_todos$SA_sig >= 0.05 ~ NA,  # No significativo si p > 0.05
-  puntos_todos$mh_guadarrama <= max(puntos_dentro$mh_guadarrama) & puntos_todos$SA > 0 ~ 1,  # Alto valor y autocorrelación alta
-  puntos_todos$mh_guadarrama > 0 & puntos_todos$SA < 0 ~ NA,   # Alto valor y autocorrelación baja
-  puntos_todos$mh_guadarrama < 0 & puntos_todos$SA > 0 ~ NA,    # Bajo valor y autocorrelación alta
-  puntos_todos$mh_guadarrama < 0 & puntos_todos$SA < 0 ~ NA    # Bajo valor y autocorrelación baja
-)
+  puntos_todos$SA_sig >= 0.01 ~ NA,  # No significativo
+  puntos_todos$mh < max(puntos_dentro$mh) & puntos_todos$SA > 0 ~ 1,  # Punto alto rodeado de puntos altos
+  puntos_todos$mh < max(puntos_dentro$mh) & puntos_todos$SA < 0 ~ NA,    # Punto bajo rodeado de puntos bajos
+  puntos_todos$mh > max(puntos_dentro$mh) & puntos_todos$SA > 0 ~ NA,   # Punto alto rodeado de puntos bajos
+  puntos_todos$mh > max(puntos_dentro$mh) & puntos_todos$SA < 0 ~ NA)
+
+puntos_todos$lisa_cluster <- as.numeric(puntos_todos$lisa_cluster)
 
 
 # Ponderar ----
-resultado <- (1/(puntos_todos$mh_guadarrama*0.6))+(puntos_todos$distancia_minima*0.2) +
-  (puntos_todos$lisa_cluster *0.2)
+resultado <- (scale(puntos_todos$mh)*0.69)+(scale(puntos_todos$dist)*0.2) +
+  (puntos_todos$lisa_cluster *0.1)
+puntos_todos <- cbind(puntos_todos, ponderacion =resultado)
+resolution <- 1000
+bbox <- st_bbox(puntos_todos)
+raster_template <- rast(ext(bbox), nrows = 869, ncols = 1083)
+puntos_vect <- vect(puntos_todos)
+raster <- terra::rasterize(puntos_vect, raster_template, field = "lisa_cluster")
+crs(raster) <- "EPSG:25830"
 
-puntos_todos$RES <- resultado
+# Parches ----
+parches <- patches(raster, directions = 8, zeroAsNA=T)
+crs(parches) <- crs(raster)
+parche_pt <- terra::extract(parches, puntos_todos)
+puntos_todos <- puntos_todos %>% 
+  mutate(parche = parche_pt$patches)
+toc()
 
+# Crear raster----
+resolution <- 1000
+bbox <- st_bbox(puntos_todos)
+raster_template <- rast(ext(bbox), nrows = 869, ncols = 1083)
+puntos_vect <- vect(puntos_todos)
+raster <- terra::rasterize(puntos_vect, raster_template, field = "parche")
+crs(raster) <- "EPSG:25830"
+
+st_write(puntos_todos, "C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/puntos_todos_parches_2050.shp", append = FALSE)
+
+###########################################################################################################################################
+###########################################################################################################################################
+###########################################################################################################################################
+
+plot(raster)
+
+#puntos_todos <- puntos_todos %>%
+#select(c(1, 2, 3, 4, 5, 6, 7, 8, 9,  11,10))
 
 puntos_todos <-  st_read("C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/puntos_todos.shp")
-colnames(puntos_todos) <- c("mh_guadarrama","distancia_minima","X","Y","inv_mh_","SA","SA_sig","geometry")
-# Crear una nueva columna con el inverso de mh_guadarrama
-puntos_todos$inv_mh_guadarrama <-   1 / puntos_todos$mh_guadarrama
-puntos_todos$lisa_cluster <- case_when(
-  puntos_todos$SA_sig >= 0.01 ~ NA,  # No significativo
-  puntos_todos$mh_guadarrama < max(puntos_dentro$mh_guadarrama) & puntos_todos$SA > 0 ~ 1,  # Punto alto rodeado de puntos altos
-  puntos_todos$mh_guadarrama < max(puntos_dentro$mh_guadarrama) & puntos_todos$SA < 0 ~ NA,    # Punto bajo rodeado de puntos bajos
-  puntos_todos$mh_guadarrama > max(puntos_dentro$mh_guadarrama) & puntos_todos$SA > 0 ~ NA,   # Punto alto rodeado de puntos bajos
-  puntos_todos$mh_guadarrama > max(puntos_dentro$mh_guadarrama) & puntos_todos$SA < 0 ~ NA)
+colnames(puntos_todos) <- c("mh_guadarrama","distancia_minima","inv_mh","X","Y","SA","SA_sig","geometry")
+
+
+writeRaster(raster, "C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/raster_resultado.tif")
+writeRaster(raster, "C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/raster_resultado.tif", overwrite=TRUE)
+
+# Plotear LISA -----
 # Definir los colores para cada nivel del factor lisa_cluster
 colors <- c("1" = "red",     # Color para el nivel 1
             "2" = "green",   # Color para el nivel 2
@@ -100,26 +134,9 @@ ggplot() +
                      name = "LISA Cluster",
                      labels = c("1", "2", "3", "4")) +
   theme(legend.position = "right")  # Ajustar la posición de la leyenda
-# Ponderar ----
-resultado <- (scale(puntos_todos$mh_guadarrama)*0.69)+(scale(puntos_todos$distancia_minima)*0.2) +
-  (puntos_todos$lisa_cluster *0.1)
-puntos_todos <- cbind(puntos_todos, ponderacion =resultado)
-resolution <- 1000
-bbox <- st_bbox(puntos_todos)
-raster_template <- rast(ext(bbox), nrows = 869, ncols = 1083)
-puntos_vect <- vect(puntos_todos)
-raster <- terra::rasterize(puntos_vect, raster_template, field = "ponderacion")
-crs(raster) <- "EPSG:25830"
-writeRaster(raster, "C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/raster_resultado.tif")
-writeRaster(raster, "C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/raster_resultado.tif", overwrite=TRUE)
-# Parches ----
-parches <- patches(raster, directions = 8, zeroAsNA=T)
-crs(parches) <- crs(raster)
-pp <- terra::extract(parches, puntos_todos)
-puntos_todos <- cbind(puntos_todos, pp)
-df_resultados <- pp %>%
-  df_resultados <- puntos_todos %>%
-  group_by(patches) %>%  # Agrupamos por el ID del parche
+
+df_resultados <- puntos_todos %>%
+  group_by(parches) %>%  # Agrupamos por el ID del parche
   summarize(
     area_total = n(),         # Sumamos el área total de cada grupo
     ponderacion_promedio = mean(ponderacion, na.rm = TRUE)  # Calculamos el valor promedio del raster en cada grupo
