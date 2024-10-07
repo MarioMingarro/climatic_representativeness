@@ -64,6 +64,8 @@ colnames(data_future_climatic_variables) <- colnames(data_present_climatic_varia
 
 
 
+
+
 # Correlation between variables ----
 cor <- cor(data_present_climatic_variables[,3:7])
 
