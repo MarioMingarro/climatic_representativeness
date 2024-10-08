@@ -1,4 +1,4 @@
-library(raster)
+library(terra)
 library(sf)
 library(tidyverse)
 library(RStoolbox)
@@ -13,9 +13,23 @@ tic()
 # CLIMATE ----
 ## Load data ----
 ## Climatic representativeness -----
-present_climatic_variables <- raster::stack(list.files("C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/CLIMA/PRESENTE/", "\\.tif$", full.names = T))
+present_climatic_variables <- terra::rast(list.files("C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/CLIMA/PRESENT/", "\\.tif$", full.names = T))
+present_climatic_variables <- present_climatic_variables[[1:17]]
 
-future_climatic_variables <- raster::stack(list.files("C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/CLIMA/RCP85_2050", "\\.tif$", full.names = T))
+future_climatic_variables <- terra::rast(list.files("C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/CLIMA/FUTURO/GFDL/", "\\.tif$", full.names = T))
+future_climatic_variables <- future_climatic_variables[[1:17]]
+
+names(present_climatic_variables) <- c("CHELSA_bio1","CHELSA_bio10","CHELSA_bio11","CHELSA_bio12","CHELSA_bio13","CHELSA_bio14",
+                                       "CHELSA_bio15","CHELSA_bio16","CHELSA_bio17","CHELSA_bio18","CHELSA_bio19","CHELSA_bio2",
+                                       "CHELSA_bio3","CHELSA_bio4","CHELSA_bio5","CHELSA_bio6","CHELSA_bio7")
+names(future_climatic_variables) <- c("CHELSA_bio1","CHELSA_bio10","CHELSA_bio11","CHELSA_bio12","CHELSA_bio13","CHELSA_bio14",
+                                      "CHELSA_bio15","CHELSA_bio16","CHELSA_bio17","CHELSA_bio18","CHELSA_bio19","CHELSA_bio2",
+                                      "CHELSA_bio3","CHELSA_bio4","CHELSA_bio5","CHELSA_bio6","CHELSA_bio7")
+
+
+#present_climatic_variables <- raster::stack(list.files("C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/CLIMA/PRESENTE/", "\\.tif$", full.names = T))
+
+#future_climatic_variables <- raster::stack(list.files("C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/CLIMA/RCP85_2050", "\\.tif$", full.names = T))
 
 study_area <- read_sf("C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/Peninsula_Iberica_89.shp")
 
@@ -23,69 +37,72 @@ polygon <- read_sf("C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/KBA/KBA_test.shp")
 
 
 # Reference system
-reference_system <- projection(study_area) # "+proj=longlat +datum=WGS84 +no_defs"
+reference_system <-terra::crs(present_climatic_variables) # "+proj=longlat +datum=WGS84 +no_defs"
 
-if(compareCRS(present_climatic_variables, future_climatic_variables) == TRUE) {
+if(terra::same.crs(present_climatic_variables, future_climatic_variables) == TRUE) {
   print("Same Reference System")
 } else {
-  future_climatic_variables <- projectRaster(future_climatic_variables, crs = reference_system)
+  future_climatic_variables <- terra::project(future_climatic_variables, reference_system)
 }
 
-if(compareCRS(study_area, present_climatic_variables) == TRUE) {
+if(terra::same.crs(study_area, present_climatic_variables) == TRUE) {
   print("Same Reference System")
 } else {
   study_area <- st_transform(study_area, crs(reference_system))
 }
 
-if(compareCRS(polygon, present_climatic_variables) == TRUE) {
+if(terra::same.crs(polygon, present_climatic_variables) == TRUE) {
   print("Same Reference System")
 } else {
   polygon <- st_transform(polygon, crs(reference_system))
   print(paste0("Reference System was modified to ", reference_system))
 }
 
-
 # Crop raster to study area
-present_climatic_variables <-  raster::mask(crop(present_climatic_variables, study_area), study_area)
-future_climatic_variables  <-  raster::mask(crop(future_climatic_variables,  study_area), study_area)
+present_climatic_variables <-  terra::mask (crop(present_climatic_variables, study_area), study_area)
+future_climatic_variables  <-  terra::mask(crop(future_climatic_variables,  study_area), study_area)
 
+reference_system <- "EPSG:25830"
+present_climatic_variables <- terra::project(present_climatic_variables, reference_system)
+future_climatic_variables <- terra::project(future_climatic_variables, reference_system)
+polygon <- st_transform(polygon, crs(reference_system))
+study_area <- st_transform(study_area, crs(reference_system))
 # Extract raster data
-data_present_climatic_variables <- raster::as.data.frame(present_climatic_variables, xy = TRUE)
-data_future_climatic_variables <- raster::as.data.frame(future_climatic_variables, xy = TRUE)
+data_present_climatic_variables <- terra::as.data.frame(present_climatic_variables, xy = TRUE)
+data_future_climatic_variables <- terra::as.data.frame(future_climatic_variables, xy = TRUE)
 
 # Delete NA
 data_present_climatic_variables<-na.omit(data_present_climatic_variables)
 data_future_climatic_variables <-na.omit(data_future_climatic_variables)
 
 # Rename columns
-colnames(data_present_climatic_variables) <- c("x","y","isotermal", "prec_meshum","rango_temp_anual", "temp_max_mescal", "temp_med_anual")
+#colnames(data_present_climatic_variables) <- c("x","y","isotermal", "prec_meshum","rango_temp_anual", "temp_max_mescal", "temp_med_anual")
 
-colnames(data_future_climatic_variables) <- colnames(data_present_climatic_variables)
+#colnames(data_future_climatic_variables) <- colnames(data_present_climatic_variables)
 
 
 
 
 
 # Correlation between variables ----
-cor <- cor(data_present_climatic_variables[,3:7])
+cor <- cor(data_present_climatic_variables[,3:length(data_present_climatic_variables)])
 
 # Select variables less correlated 
 drop_1  <-  findCorrelation(cor, cutoff = .8)
-drop  <-  names(data_present_climatic_variables[,3:7])[drop_1]
+drop  <-  names(data_present_climatic_variables[,3:length(data_present_climatic_variables)])[drop_1]
 data_present_climatic_variables <- data_present_climatic_variables[!names(data_present_climatic_variables) %in% drop]
 data_future_climatic_variables <- data_future_climatic_variables[!names(data_future_climatic_variables) %in% drop]
 
+present_climatic_variables <- terra::subset(present_climatic_variables, !names(present_climatic_variables) %in% drop)
+future_climatic_variables <- terra::subset(future_climatic_variables, !names(future_climatic_variables) %in% drop)
 
-present_climatic_variables <- dropLayer(present_climatic_variables, names(present_climatic_variables)[drop_1])
-future_climatic_variables <- dropLayer(future_climatic_variables, names(future_climatic_variables)[drop_1])
 
-
-corrplot(cor(data_present_climatic_variables[3:length(data_present_climatic_variables)]),
-         method = "number",
-         type = "upper")
-corrplot(cor(data_future_climatic_variables[3:length(data_present_climatic_variables)]),
-         method = "number",
-         type = "upper")
+# corrplot(cor(data_present_climatic_variables[3:length(data_present_climatic_variables)]),
+#          method = "number",
+#          type = "upper")
+# corrplot(cor(data_future_climatic_variables[3:length(data_present_climatic_variables)]),
+#          method = "number",
+#          type = "upper")
 
 
 
@@ -96,6 +113,8 @@ data_future_climatic_variables  <- mutate(data_future_climatic_variables, Period
 # Join two dataset
 colnames(data_future_climatic_variables) <- colnames(data_present_climatic_variables)
 data <- rbind(data_present_climatic_variables, data_future_climatic_variables)
+
+
 
 
 
@@ -136,7 +155,7 @@ mh <- cbind(data[,c(1:3)], mh_f)
 for(j in 4:length(mh)){
   mh_present <- raster::brick()
   mh_f <- dplyr::filter(mh, Period == "Present")
-  mh_f <- rasterFromXYZ(mh_f[, c(1:2,j)])
+  mh_f <- raster::rasterFromXYZ(mh_f[, c(1:2,j)])
   names(mh_f) <- colnames(mh[j])
   mh_present <- raster::stack(mh_present, mh_f)
   crs(mh_present) <- reference_system
@@ -150,7 +169,7 @@ for(j in 4:length(mh)){
 for(j in 4:length(mh)){
   mh_future <- raster::brick()
   mh_f <- dplyr::filter(mh, Period == "Future")
-  mh_f <- rasterFromXYZ(mh_f[, c(1:2,j)])
+  mh_f <- raster::rasterFromXYZ(mh_f[, c(1:2,j)])
   names(mh_f) <- colnames(mh[j])
   mh_future <- raster::stack(mh_future, mh_f)
   crs(mh_future) <- reference_system
@@ -167,13 +186,24 @@ library(tictoc)
 
 tic()
 # Cargar archivos
-mh_raster <- terra::rast("C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/MH_RES/PR_Sierra de Gádor.tif")
-mh_raster <- terra::rast("C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/MH_RES/RCP85_2070_Sierra de Gádor.tif")
+mh_raster <- terra::rast("C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/MH_RES/PR_Sierra de Gádor.tif")#RCP85_2070_Sierra de Gádor.tif
+
 area_protegida <- sf::st_read("C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/KBA/KBA_Gador.shp")
 
+study_area <- read_sf("C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/Peninsula_Iberica_89.shp")
 
+
+
+
+# Reference system
+reference_system <- crs(study_area) # "+proj=longlat +datum=WGS84 +no_defs"
+
+mh_raster <-terra::project(mh_raster, reference_system)
+
+  
+  
 # Convertimos el shapefile a la misma proyección que el raster
-area_protegida <- sf::st_transform(area_protegida, crs = terra::crs(mh_raster))
+area_protegida <- sf::st_transform(area_protegida, crs(reference_system))
 
 # Extraer los puntos del raster usando terra
 puntos_todos <- terra::as.points(mh_raster)
@@ -263,11 +293,16 @@ toc()
 resolution <- 1000
 bbox <- st_bbox(puntos_todos)
 raster_template <- rast(ext(bbox), nrows = 869, ncols = 1083)
+puntos_todos$SA <- scale(puntos_todos$SA )
+puntos_todos$SA_norm <- (puntos_todos$SA - min(puntos_todos$SA)) / (max(puntos_todos$SA) - min(puntos_todos$SA))
+
 puntos_vect <- vect(puntos_todos)
-raster <- terra::rasterize(puntos_vect, raster_template, field = "SA" )# SA parche)
+
+summary(puntos_todos$SA)
+raster <- terra::rasterize(puntos_vect, raster_template, field = "SA_norm" )# SA parche)
 crs(raster) <- "EPSG:25830"
 
-writeRaster(raster, paste0("C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/MH_RES/PRE_Gador_", "SA",   ".tif"), overwrite=TRUE)
+writeRaster(raster, paste0("C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/MH_RES/PRE_Gador_", "SA_3",   ".tif"), overwrite=TRUE)
 
 
 writeRaster(raster, paste0("C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/MH_RES/RCP85_2070_Gador_", "SA",  ".tif"), overwrite=TRUE)
