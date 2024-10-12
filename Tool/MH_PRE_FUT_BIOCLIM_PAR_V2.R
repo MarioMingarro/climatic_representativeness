@@ -14,16 +14,43 @@ gc(reset = T)
 
 dir_present_climate_data <- "C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/CLIMA/PRESENT/"
 dir_future_climate_data <- "C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/CLIMA/FUTURO/GFDL/"
-dir_result <- "C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/TEST_AREA_RED/RES/"
+dir_result <- "C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/TEST_PNAC/"
 
-study_area <- read_sf("C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/TEST_AREA_RED/MURCIA.shp")
-polygon <- read_sf("C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/TEST_AREA_RED/KBA_MURCIA_TEST3.shp")
-
+study_area <- read_sf("C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/Peninsula_Iberica_89.shp")
+polygon <- read_sf("C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/TEST_PNAC/national_parks.shp")
 # Create name object
-names <- polygon$NatName
+names <- polygon$NAME
 year <- "2070"
 model = "GFDL"
-tic()
+
+
+# Crear las subcarpetas 'presente' y 'futuro' dentro de 'dir_result'
+dir_present <- paste0(dir_result, "Present/")
+dir_fut <- paste0(dir_result, "Future/")
+dir_futu <- paste0(dir_fut, year,"/")
+dir_future <- paste0(dir_futu, model,"/")
+
+# Crear las carpetas si no existen
+if (!dir.exists(dir_result)) {
+  dir.create(dir_result)
+}
+if (!dir.exists(dir_present)) {
+  dir.create(dir_present)
+}
+
+if (!dir.exists(dir_fut)) {
+  dir.create(dir_fut)
+}
+
+if (!dir.exists(dir_futu)) {
+  dir.create(dir_futu)
+}
+
+if (!dir.exists(dir_futur)) {
+  dir.create(dir_futur)
+}
+
+
 
 # CLIMATE ----
 ## Load data ----
@@ -65,6 +92,21 @@ drop_1  <-  caret::findCorrelation(cor, cutoff = .8)
 drop  <-  names(data_present_climatic_variables[,3:length(data_present_climatic_variables)])[drop_1]
 data_present_climatic_variables <- data_present_climatic_variables[!names(data_present_climatic_variables) %in% drop]
 data_future_climatic_variables <- data_future_climatic_variables[!names(data_future_climatic_variables) %in% drop]
+
+
+jpeg(paste0(dir_result, "cor_variables.jpeg"), quality = 75, width = 1200, height = 600)
+
+par(mfrow = c(1, 2))
+
+corrplot(cor(data_present_climatic_variables[3:length(data_present_climatic_variables)]),
+         method = "number", type = "upper", title = "Correlación Variables Presentes")
+
+
+corrplot(cor(data_future_climatic_variables[3:length(data_future_climatic_variables)]),
+         method = "number", type = "upper", title = "Correlación Variables Futuras")
+
+
+dev.off()
 
 present_climatic_variables <- terra::subset(present_climatic_variables, !names(present_climatic_variables) %in% drop)
 future_climatic_variables <- terra::subset(future_climatic_variables, !names(future_climatic_variables) %in% drop)
@@ -110,7 +152,7 @@ representativeness <- function(j) {
   mh_raster_p <- dplyr::filter(mh_p, Period == "Present")
   mh_raster_p <- terra::rast(mh_raster_p[, c(1:2, j+3)], crs = reference_system)
   names(mh_raster_p) <- colnames(mh_p[j+3])
-  writeRaster(mh_raster_p, paste0(dir_result, "PRE_", names[j], ".tif"), overwrite = TRUE)
+  writeRaster(mh_raster_p, paste0(dir_present, "PRE_", names[j], ".tif"), overwrite = TRUE)
   
   pol <- polygon[j, ]
   puntos_todos_p <- terra::as.points(mh_raster_p)
@@ -150,11 +192,11 @@ representativeness <- function(j) {
   
   raster <- terra::rasterize(puntos_vect_p, raster_template, field = "lisa_cluster")
   crs(raster) <- crs(mh_raster_p)
-  writeRaster(raster, paste0(dir_result, "PRE_sig_", names[j], ".tif"), overwrite = TRUE)
+  writeRaster(raster, paste0(dir_present, "Pre_sig_", names[j], ".tif"), overwrite = TRUE)
   
   raster <- terra::rasterize(puntos_vect_p, raster_template, field = "SA")
   crs(raster) <- crs(mh_raster_p)
-  writeRaster(raster, paste0(dir_result, "PRE_SA_", names[j], ".tif"), overwrite = TRUE)
+  writeRaster(raster, paste0(dir_present, "Pre_SA_", names[j], ".tif"), overwrite = TRUE)
   
   
   
@@ -184,10 +226,9 @@ representativeness <- function(j) {
   mh_raster_f <- terra::rast(mh_raster_f[, c(1:2, j+3)], crs = reference_system)
   names(mh_raster_f) <- colnames(mh_f[j+3])
   writeRaster(mh_raster_f,
-              paste0(dir_result, model, "_", year, "_", names[j], ".tif"),
+              paste0(dir_future, model, "_", year, "_", names[j], ".tif"),
               overwrite = TRUE)
   
-  pol <- polygon[j, ]
   puntos_todos_f <- terra::as.points(mh_raster_f)
   puntos_todos_f <- sf::st_as_sf(puntos_todos_f)
   colnames(puntos_todos_f) <- c("mh", "geometry")
@@ -229,28 +270,31 @@ representativeness <- function(j) {
   raster <- terra::rasterize(puntos_vect_f, raster_template, field = "lisa_cluster")
   crs(raster) <- crs(mh_raster_f)
   writeRaster(raster,
-              paste0(dir_result, "Sig", model, "_", year, "_", names[j], ".tif"),
+              paste0(dir_future, "Sig_", model, "_", year, "_", names[j], ".tif"),
               overwrite = TRUE)
   
   raster <- terra::rasterize(puntos_vect_f, raster_template, field = "SA")
   crs(raster) <- crs(mh_raster_f)
   writeRaster(raster,
-              paste0(dir_result, "SA", model, "_", year, "_", names[j], ".tif"),
+              paste0(dir_future, "SA_", model, "_", year, "_", names[j], ".tif"),
               overwrite = TRUE)
 
 }
   
-
+tic()
 for(j in 1:length(names)){
   representativeness(j)
 }
+toc()
 
 
-# PRESENTE ----
+
+
 closeAllConnections()
-num_cores <- 5
+num_cores <- 15
 cl <- makeCluster(num_cores)
 registerDoParallel(cl)
+
 
 foreach(j = 1:length(names),
         .packages = c("terra", "sf", "dplyr", "spdep")) %dopar% {
@@ -265,15 +309,9 @@ toc()
 
 
 rm(list = setdiff(ls(), c("data_present_climatic_variables", "data_future_climatic_variables", "dir_future_climate_data",
-                          "dir_present_climate_data", "dir_result", "future_climatic_variables", "max_mh_p", "polygon", 
-                          "present_climatic_variables", "reference_system", "study_area", "names", "j", "model", "year"
+                          "dir_present_climate_data", "dir_result", "future_climatic_variables", "polygon", 
+                          "present_climatic_variables", "reference_system", "study_area", "names", "model", "year"
 )))  
-
-
-rm(list = setdiff(ls(), c("dir_future_climate_data","dir_present_climate_data", "dir_result", "future_climatic_variables", "polygon", 
-                          "present_climatic_variables", "reference_system", "study_area", "names", "model", "year", "data_present_climatic_variables",
-                          "data_future_climatic_variables", "j" , "max_mh_p"
-)))
 
 
 
