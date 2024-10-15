@@ -14,7 +14,8 @@ gc(reset = T)
 
 dir_present_climate_data <- "C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/CLIMA/PRESENT/"
 dir_future_climate_data <- "C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/CLIMA/FUTURO/GFDL/"
-dir_result <- "C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/TEST_PNAC/"
+dir_result <- "C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/TEST_/"
+
 
 study_area <- read_sf("C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/Peninsula_Iberica_89.shp")
 polygon <- read_sf("C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/TEST_PNAC/national_parks.shp")
@@ -46,8 +47,8 @@ if (!dir.exists(dir_futu)) {
   dir.create(dir_futu)
 }
 
-if (!dir.exists(dir_futur)) {
-  dir.create(dir_futur)
+if (!dir.exists(dir_future)) {
+  dir.create(dir_future)
 }
 
 
