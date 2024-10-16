@@ -12,17 +12,18 @@ library(foreach)
 closeAllConnections()
 gc(reset = T)
 
-dir_present_climate_data <- "C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/CLIMA/PRESENT/"
-dir_future_climate_data <- "C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/CLIMA/FUTURO/GFDL/"
-dir_result <- "C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/TEST_KBA/"
 
+dir_result <- "C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/TEST_PNAC_OLD_DATA/"
+
+dir_present_climate_data <- "C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/CLIMA_OLD/PRESENTE/"
+dir_future_climate_data <- "C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/CLIMA_OLD/RCP85_2050/"
 
 study_area <- read_sf("C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/Peninsula_Iberica_89.shp")
-polygon <- read_sf("C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/TEST_KBA/KBA_test.shp")
+polygon <- read_sf("C:/A_TRABAJO/A_GABRIEL/REPRESENTATIVIDAD/TEST_PNAC/national_parks.shp")
 # Create name object
-names <- polygon$NatName
-year <- "2070"
-model = "GFDL"
+names <- polygon$NAME
+year <- "2050"
+model = "OLD"
 
 
 # Crear las subcarpetas 'presente' y 'futuro' dentro de 'dir_result'
@@ -56,20 +57,17 @@ if (!dir.exists(dir_future)) {
 # CLIMATE ----
 ## Load data ----
 present_climatic_variables <- terra::rast(list.files(dir_present_climate_data, "\\.tif$", full.names = T))
-present_climatic_variables <- present_climatic_variables[[1:17]]
 
 future_climatic_variables <- terra::rast(list.files(dir_future_climate_data, "\\.tif$", full.names = T))
-future_climatic_variables <- future_climatic_variables[[1:17]]
 
-names(present_climatic_variables) <- c("CHELSA_bio1","CHELSA_bio10","CHELSA_bio11","CHELSA_bio12","CHELSA_bio13","CHELSA_bio14",
-                                       "CHELSA_bio15","CHELSA_bio16","CHELSA_bio17","CHELSA_bio18","CHELSA_bio19","CHELSA_bio2",
-                                       "CHELSA_bio3","CHELSA_bio4","CHELSA_bio5","CHELSA_bio6","CHELSA_bio7")
+names(present_climatic_variables) <- c("isotermal","prec_meshum","rango_temp_anual","temp_max_mescal","temp_med_anual")
 
 names(future_climatic_variables) <- names(present_climatic_variables)
 
 # Reference system ----
 reference_system <- "EPSG:4326" 
-terra::crs(present_climatic_variables)
+present_climatic_variables <- terra::project(present_climatic_variables, reference_system)
+future_climatic_variables <- terra::project(future_climatic_variables, reference_system)
 study_area <- st_transform(study_area, crs(reference_system))
 polygon <- st_transform(polygon, crs(reference_system))
 
@@ -279,9 +277,9 @@ representativeness <- function(j) {
   writeRaster(raster,
               paste0(dir_future, "SA_", model, "_", year, "_", names[j], ".tif"),
               overwrite = TRUE)
-
-}
   
+}
+
 tic()
 for(j in 1:length(names)){
   representativeness(j)
