@@ -4,7 +4,7 @@ library(tidyverse)
 library(stringr)
 
 
-regiones <- read_sf("A:/REGIONES_KARST/geokarst_reg_final_def.shp")
+regiones <- read_sf("C:/A_TRABAJO/A_ALBERTO_JIM/geokarst_reg_final_def.shp")
 
 # Área total ----
 regiones$area_m2 <- st_area(regiones)
@@ -34,21 +34,33 @@ kk <- terra::rast("B:/A_DATA/TERRACLIMATE/agg_terraclimate_tmax_1958_CurrentYear
 
 library(terra)
 library(sf)
-mask <- st_read("A:/REGIONES_KARST/AE.shp")
+mask <- st_read("C:/A_TRABAJO/A_ALBERTO_JIM/AE.shp")
 mask <- st_transform(regiones, crs("+proj=longlat +datum=WGS84 +no_defs"))
-for (i in 1958:2023){
+
+tmax <- raster::brick()
+
+for (i in 1958:1959){
   terraclimate <- raster::brick(paste0("http://thredds.northwestknowledge.net:8080/thredds/dodsC/TERRACLIMATE_ALL/data/TerraClimate_ppt_",i,".nc"))
   terraclimate <- terra::mask(terra::crop(terraclimate,mask), mask)
+  a <- mean(terraclimate)
+  tmax <- raster::stack(tmax, a)
+}
+
+plot(tmax)
   for(j in 1:12){
+    tmax <- mean(terraclimate)
     name <- names(terraclimate[[j]])
     name <- str_sub(str_sub(gsub("\\.", "_", name),  2, -1),  1, 7)
     writeRaster(terraclimate[[j]], paste0(dir_PCP, "Tmax_", name, ".tif"))
-    }}
+    }
 
 ff <- kk[[1]]
 
 plot(ff)
 
+kk2 <- raster::brick(paste0("http://thredds.northwestknowledge.net:8080//thredds/dodsC/TERRACLIMATE_ALL/summaries/TerraClimate19611990_tmax.nc"))
+
+plot(kk[[1]])
 
 TMAX <- terra::rast(list.files(dir_TMAX, "\\.tif$", full.names = T))
 TMIN <- terra::rast(list.files(dir_TMIN, "\\.tif$", full.names = T))
