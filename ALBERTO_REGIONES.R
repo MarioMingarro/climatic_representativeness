@@ -2,9 +2,12 @@ library(terra)
 library(sf)
 library(tidyverse)
 library(stringr)
+library(tictoc)
 
+directorio <- "C:/A_TRABAJO/A_ALBERTO_JIM/"
+directorio_result <- "C:/A_TRABAJO/A_ALBERTO_JIM/VARIABLES/"
 
-regiones <- read_sf("C:/A_TRABAJO/A_ALBERTO_JIM/geokarst_reg_final_def.shp")
+regiones <- read_sf(paste0(directorio, "geokarst_reg_final_def.shp"))
 
 # Área total ----
 regiones$area_m2 <- st_area(regiones)
@@ -23,63 +26,94 @@ bbox_coords <- function(regiones) {
 coords_df <- do.call(rbind, lapply(st_geometry(regiones), bbox_coords))
 regiones <- cbind(regiones, coords_df)
 
-# Temperatura máxima/mínima/media ----
+regiones <- st_transform(regiones, crs("+proj=longlat +datum=WGS84 +no_defs"))
 
-dir_TMAX<- "B:/A_DATA/TERRACLIMATE/TMAX/"
-dir_TMIN<- "B:/A_DATA/TERRACLIMATE/TMIN/"
-dir_TMED<- "B:/A_DATA/TERRACLIMATE/TMED/"
-dir_PCP<- "B:/A_DATA/TERRACLIMATE/PCP/"
+# aet (Actual Evapotranspiration, monthly total), units = mm
+# def (Climate Water Deficit, monthly total), units = mm
+# pet (Potential evapotranspiration, monthly total), units = mm
+# ppt (Precipitation, monthly total), units = mm
+# q (Runoff, monthly total), units = mm
+# soil (Soil Moisture, total column - at end of month), units = mm
+# srad (Downward surface shortwave radiation), units = W/m2
+# swe (Snow water equivalent - at end of month), units = mm
+# vap (Vapor pressure, average for month), units  = kPa
+# ws (Wind speed, average for month), units = m/s
+# vpd (Vapor Pressure Deficit, average for month), units = kpa
+# PDSI (Palmer Drought Severity Index, at end of month), units = unitless
+# tmax (Max Temperature, average for month), units = C
+# tmin (Min Temperature, average for month), units = C
+variable_name <- "ppt"
+variable <- raster::stack()
 
-kk <- terra::rast("B:/A_DATA/TERRACLIMATE/agg_terraclimate_tmax_1958_CurrentYear_GLOBE.nc")
-
-library(terra)
-library(sf)
-mask <- st_read("C:/A_TRABAJO/A_ALBERTO_JIM/AE.shp")
-mask <- st_transform(regiones, crs("+proj=longlat +datum=WGS84 +no_defs"))
-
-tmax <- raster::brick()
-
-for (i in 1958:1959){
-  terraclimate <- raster::brick(paste0("http://thredds.northwestknowledge.net:8080/thredds/dodsC/TERRACLIMATE_ALL/data/TerraClimate_ppt_",i,".nc"))
-  terraclimate <- terra::mask(terra::crop(terraclimate,mask), mask)
-  a <- mean(terraclimate)
-  tmax <- raster::stack(tmax, a)
+tic()
+for (i in 1958:2023){
+  terraclimate <- raster::brick(
+    paste0("http://thredds.northwestknowledge.net:8080/thredds/dodsC/TERRACLIMATE_ALL/data/TerraClimate_", variable_name,"_",i,".nc"))
+  terraclimate <- terra::mask(terra::crop(terraclimate, regiones), regiones)
+  if (variable_name %in% c("tmax", "tmin")){
+    var <- mean(terraclimate)
+  }else{
+    var <- sum(terraclimate)
+  }
+  var <- mean(terraclimate)
+  names(var) <- paste0("Y_", i)
+  variable <- raster::stack(variable, var)
 }
-
-plot(tmax)
-  for(j in 1:12){
-    tmax <- mean(terraclimate)
-    name <- names(terraclimate[[j]])
-    name <- str_sub(str_sub(gsub("\\.", "_", name),  2, -1),  1, 7)
-    writeRaster(terraclimate[[j]], paste0(dir_PCP, "Tmax_", name, ".tif"))
-    }
-
-ff <- kk[[1]]
-
-plot(ff)
-
-kk2 <- raster::brick(paste0("http://thredds.northwestknowledge.net:8080//thredds/dodsC/TERRACLIMATE_ALL/summaries/TerraClimate19611990_tmax.nc"))
-
-plot(kk[[1]])
-
-TMAX <- terra::rast(list.files(dir_TMAX, "\\.tif$", full.names = T))
-TMIN <- terra::rast(list.files(dir_TMIN, "\\.tif$", full.names = T))
-TMED <- terra::rast(list.files(dir_TMED, "\\.tif$", full.names = T))
-PCP <- terra::rast(list.files(dir_PCP, "\\.tif$", full.names = T))
+variable <- mean(variable)
+writeRaster(variable, paste0(directorio_result, variable_name, "1958_2023.tif"), overwrite = TRUE)
+variable_df <- raster::extract(variable, regiones, fun=mean, na.rm=TRUE, df=TRUE)
+regiones[[variable_name]] <- variable_df$layer
+toc()
 
 
-names(present_climatic_variables) <- c("CHELSA_bio1","CHELSA_bio10","CHELSA_bio11","CHELSA_bio12","CHELSA_bio13","CHELSA_bio14",
-                                       "CHELSA_bio15","CHELSA_bio16","CHELSA_bio17","CHELSA_bio18","CHELSA_bio19","CHELSA_bio2",
-                                       "CHELSA_bio3","CHELSA_bio4","CHELSA_bio5","CHELSA_bio6","CHELSA_bio7")
+write.csv2(regiones,paste0(directorio_result, "regiones_var.csv"))
 
-names(future_climatic_variables) <- names(present_climatic_variables)
+plot(variable)
+plot(regiones$geometry, add=T)
 
-# Reference system ----
-reference_system <- "EPSG:4326" 
-terra::crs(present_climatic_variables)
-study_area <- st_transform(study_area, crs(reference_system))
-polygon <- st_transform(polygon, crs(reference_system))
+library(reshape2)
+library(PupillometryR)
+# Excluir la columna 'geometry'
+regiones_no_geom <- st_drop_geometry(regiones)
 
-# Crop raster to study area
-present_climatic_variables <-  terra::mask (crop(present_climatic_variables, study_area), study_area)
-future_climatic_variables  <-  terra::mask(crop(future_climatic_variables,  study_area), study_area)
+# Aplicar melt() solo a las columnas necesarias, seleccionando la columna 6 y la columna 13 (tmin)
+regiones_plot <- melt(regiones_no_geom[, c(6, 14)], id.vars = "UTM_kars_6")
+
+# Convertir UTM_kars_6 a factor para que se trate como una variable categórica
+regiones_plot$UTM_kars_6 <- as.factor(regiones_plot$UTM_kars_6)
+
+# Realizar el violin plot agrupado por la columna 6 (UTM_kars_6)
+ggplot(regiones_plot,
+       aes(
+         x = UTM_kars_6,     # Agrupar por la columna 6 (UTM_kars_6)
+         y = value,          # Los valores de la columna "tmin" (o la columna que hayas seleccionado)
+         fill = UTM_kars_6,
+         colour = UTM_kars_6,
+         group = UTM_kars_6  # Agrupar explícitamente por UTM_kars_6
+       )) +
+  geom_flat_violin(
+    position = position_nudge(x = .2, y = 0),
+    trim = FALSE,
+    alpha = 0.5,
+    colour = NA
+  ) +
+  geom_point(position = position_jitter(width = .1),
+             size = 2,
+             shape = 20,
+             alpha =.3) +
+  geom_boxplot(
+    outlier.shape = NA,
+    alpha = .5,
+    width = .1,
+    colour = "black"
+  ) +
+  ggtitle("ppt") +
+  theme(
+    legend.title = element_blank(),
+    axis.title.x = element_blank(),
+    axis.text.x = element_text(angle = 45, hjust = 1),  # Para mostrar los valores de UTM_kars_6
+    axis.title.y = element_blank(),
+    axis.ticks.x = element_blank()
+  )
+
+
