@@ -55,7 +55,6 @@ for (i in 1958:2023){
   }else{
     var <- sum(terraclimate)
   }
-  var <- mean(terraclimate)
   names(var) <- paste0("Y_", i)
   variable <- raster::stack(variable, var)
 }
@@ -66,7 +65,7 @@ regiones[[variable_name]] <- variable_df$layer
 toc()
 
 
-write.csv2(regiones,paste0(directorio_result, "regiones_var.csv"))
+write.csv2(regiones,paste0(directorio_result, "regiones_pcp.csv"))
 r <- read.csv2(paste0(directorio_result, "regiones_var.csv"))
 r <- r[,-c(1,2,3,4)]
 
@@ -84,10 +83,27 @@ NPP <- terra::mask(terra::crop(NPP, regiones), regiones)
 NPP <- raster::extract(NPP, regiones, fun=mean, na.rm=TRUE)
 regiones$NPP <- NPP$`CHELSA_npp_1981-2010_AE`
 
+
+CSI <- terra::rast("C:/A_TRABAJO/A_ALBERTO_JIM/VARIABLES/ESTABILIDAD/Raster_layers_R_scripts/Layers/past/csi_past.tif")
+c <- terra::crs(CSI)
+reg <- st_transform(regiones, c)
+CSI <- terra::mask(terra::crop(CSI, reg), reg)
+CSI <- project(CSI, "+proj=longlat +datum=WGS84 +no_defs")
+CSI <- raster::extract(CSI, regiones, fun=mean, na.rm=TRUE)
+regiones$CSI <- CSI$csi_past
+
+SDB1 <- terra::rast("C:/A_TRABAJO/A_ALBERTO_JIM/VARIABLES/ESTABILIDAD/Raster_layers_R_scripts/Layers/past/sd_past_bio_1.tif")
+c <- terra::crs(SDB1)
+reg <- st_transform(regiones, c)
+SDB1 <- terra::mask(terra::crop(SDB1, reg), reg)
+SDB1 <- project(SDB1, "+proj=longlat +datum=WGS84 +no_defs")
+SDB1 <- raster::extract(SDB1, regiones, fun=mean, na.rm=TRUE)
+regiones$SDB1 <- SDB1$sd_past_bio_1
+
 r2 <- regiones[,c(4,13,14)]
 kk <- cbind(r,r2)
 
-write.csv2(kk,paste0(directorio_result, "regiones_var_all_N.csv"))
+write.csv2(regiones,paste0(directorio_result, "regiones_var_all_PES.csv"))
 
 
 TCD <- rast("C:/A_TRABAJO/A_ALBERTO_JIM/VARIABLES/TCD/TCD_2018_100m_es_25830_V1_0.tif")
